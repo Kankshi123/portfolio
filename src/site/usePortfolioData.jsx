@@ -176,29 +176,24 @@ export function PortfolioProvider({ children }) {
   useEffect(() => {
     const unsubscribe = subscribeToCloudContent((cloudData) => {
       if (cloudData && (cloudData.categories?.length || cloudData.photos?.length)) {
-        setContent(prev => {
-          const cloudTime = cloudData._lastSavedAt || cloudData._cloudSyncedAt || 0
-          const localTime = prev._lastSavedAt || 0
-          // If cloud data is present and newer or local has no timestamp, sync
-          if (cloudTime >= localTime || !prev._lastSavedAt) {
-            const merged = {
-              ...defaultContent,
-              ...cloudData,
-              settings: { ...defaultContent.settings, ...(cloudData.settings || {}) },
-              about: { ...defaultContent.about, ...(cloudData.about || {}) },
-              contact: { ...defaultContent.contact, ...(cloudData.contact || {}) },
-              categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
-              photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
-              heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
-              _lastSavedAt: cloudTime
-            }
-            try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
-            } catch (e) { /* ignore */ }
-            idbSet(STORAGE_KEY, merged)
-            return merged
+        setContent(() => {
+          const cloudTime = cloudData._lastSavedAt || cloudData._cloudSyncedAt || Date.now()
+          const merged = {
+            ...defaultContent,
+            ...cloudData,
+            settings: { ...defaultContent.settings, ...(cloudData.settings || {}) },
+            about: { ...defaultContent.about, ...(cloudData.about || {}) },
+            contact: { ...defaultContent.contact, ...(cloudData.contact || {}) },
+            categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
+            photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
+            heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
+            _lastSavedAt: cloudTime
           }
-          return prev
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+          } catch (e) { /* ignore */ }
+          idbSet(STORAGE_KEY, merged)
+          return merged
         })
       }
     })
@@ -208,20 +203,12 @@ export function PortfolioProvider({ children }) {
     }
   }, [cloudConnected])
 
-  // Initial cloud sync check: if cloud has content, load it; if local is newer, upload local to cloud
+  // Initial cloud sync check: if cloud has content, load it into state and cache
   useEffect(() => {
     fetchContentFromCloud().then((cloudData) => {
       if (cloudData && (cloudData.categories?.length || cloudData.photos?.length)) {
-        setContent(prev => {
-          const cloudTime = cloudData._lastSavedAt || cloudData._cloudSyncedAt || 0
-          const localTime = prev?._lastSavedAt || 0
-
-          // If local device has newer edits, keep local and push to cloud
-          if (localTime > cloudTime) {
-            pushContentToCloud(prev)
-            return prev
-          }
-
+        setContent(() => {
+          const cloudTime = cloudData._lastSavedAt || cloudData._cloudSyncedAt || Date.now()
           const merged = {
             ...defaultContent,
             ...cloudData,
@@ -236,11 +223,6 @@ export function PortfolioProvider({ children }) {
           try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)) } catch (e) {}
           idbSet(STORAGE_KEY, merged)
           return merged
-        })
-      } else if (content && (!cloudData || !cloudData.categories)) {
-        pushContentToCloud({
-          ...content,
-          _lastSavedAt: Date.now()
         })
       }
     }).catch(() => {})

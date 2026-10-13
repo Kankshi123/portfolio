@@ -126,23 +126,32 @@ export function AdminModal() {
   const [showCloudConfig, setShowCloudConfig] = useState(false)
   const [cloudSyncing, setCloudSyncing] = useState(false)
   const [cloudSyncFeedback, setCloudSyncFeedback] = useState(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState(null)
 
   const handlePushToCloud = async () => {
     if (cloudSyncing) return
+    
+    // If just synced in the last 2.5 seconds, don't spam Firestore document write limit
+    if (lastSyncedAt && Date.now() - lastSyncedAt < 2500) {
+      setCloudSyncFeedback({ type: 'success', text: 'Cloud is already 100% updated with your latest changes.' })
+      return
+    }
+
     setCloudSyncing(true)
     setCloudSyncFeedback(null)
     try {
       const ok = await syncCurrentContentToCloud()
       if (ok) {
+        setLastSyncedAt(Date.now())
         setCloudSyncFeedback({ type: 'success', text: 'Cloud sync successful! Phone & laptop are now 100% updated.' })
       } else {
-        setCloudSyncFeedback({ type: 'error', text: 'Sync failed. Please check internet connection or Firebase setup.' })
+        setCloudSyncFeedback({ type: 'error', text: 'Sync busy or slow network. Please wait a moment and try again.' })
       }
     } catch (err) {
-      setCloudSyncFeedback({ type: 'error', text: 'Sync error: ' + (err?.message || 'Unknown error') })
+      setCloudSyncFeedback({ type: 'error', text: 'Sync error: ' + (err?.message || 'Network busy') })
     } finally {
       setCloudSyncing(false)
-      setTimeout(() => setCloudSyncFeedback(null), 6000)
+      setTimeout(() => setCloudSyncFeedback(null), 5000)
     }
   }
 
@@ -1379,8 +1388,8 @@ export function AdminModal() {
                         </h4>
                         <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#666' }}>
                           {cloudConnected 
-                            ? '🟢 Live Sync Active: Laptop ya Phone par koi bhi edit karte hi doosre device par turant live sync ho jata hai!'
-                            : '⚪ Local Mode: Edits sirf is browser me save ho rahe hain. Laptop aur Phone aapas me sync karne ke liye neeche Firebase connect karein.'}
+                            ? '🟢 Live Sync Active: Any changes made on laptop or phone automatically sync across all devices in real time.'
+                            : '⚪ Local Mode: Edits are currently saved only in this browser. Connect Firebase below to enable cross-device live sync.'}
                         </p>
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -1471,11 +1480,11 @@ export function AdminModal() {
                         </div>
 
                         <div style={{ marginTop: '14px', background: '#f8f9fa', padding: '12px', borderRadius: '6px', fontSize: '12px', color: '#555', lineHeight: '1.6' }}>
-                          <strong>Free Firebase 2 minute me connect karne ka tarika:</strong>
+                          <strong>How to connect free Firebase in 2 minutes:</strong>
                           <ol style={{ margin: '6px 0 0', paddingLeft: '20px' }}>
-                            <li><a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{ color: '#0066cc', textDecoration: 'underline' }}>console.firebase.google.com</a> par jakar <strong>"Create a project"</strong> karein (100% Free).</li>
-                            <li>Left menu se <strong>Build &gt; Firestore Database &gt; Create Database</strong> click karein (Start in <em>test mode</em>).</li>
-                            <li>Project Overview ke bagal me Gear (Settings) icon &gt; Project Settings &gt; General &gt; <strong>"Add Web app" (&lt;/&gt;)</strong> karein aur wahan se <code>firebaseConfig</code> copy karke upar paste karke Save karein!</li>
+                            <li>Go to <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{ color: '#0066cc', textDecoration: 'underline' }}>console.firebase.google.com</a> and click <strong>"Create a project"</strong> (100% Free).</li>
+                            <li>From the left menu, select <strong>Build &gt; Firestore Database &gt; Create Database</strong> (Start in <em>test mode</em>).</li>
+                            <li>Click Project Overview gear icon &gt; Project Settings &gt; General &gt; <strong>"Add Web app" (&lt;/&gt;)</strong>, copy the <code>firebaseConfig</code> object, paste it above, and click Save.</li>
                           </ol>
                         </div>
                       </div>

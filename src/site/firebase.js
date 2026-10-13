@@ -123,56 +123,72 @@ async function reconstructContent(docData, db) {
   return docData
 }
 
-// Push latest portfolio content to cloud Firestore (with automatic chunking for large media)
-export async function pushContentToCloud(contentData) {
+const withTimeout = (promise, ms = 20000) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Cloud request timed out')), ms))
+  ])
+}
+
+// Push latest portfolio content to cloud Firestore (with automatic retry and chunking)
+export async function pushContentToCloud(contentData, maxRetries = 2) {
   const db = getDb()
   if (!db) {
     console.warn('Firebase DB not initialized, cannot push')
     return false
   }
 
-  try {
-    // Strip any undefined fields
-    const cleanData = JSON.parse(JSON.stringify(contentData))
-    cleanData._lastSavedAt = cleanData._lastSavedAt || Date.now()
-    cleanData._cloudSyncedAt = Date.now()
-    const jsonStr = JSON.stringify(cleanData)
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Strip any undefined fields
+      const cleanData = JSON.parse(JSON.stringify(contentData))
+      cleanData._lastSavedAt = cleanData._lastSavedAt || Date.now()
+      cleanData._cloudSyncedAt = Date.now()
+      const jsonStr = JSON.stringify(cleanData)
 
-    const docRef = doc(db, COLLECTION_NAME, DOC_ID)
+      const docRef = doc(db, COLLECTION_NAME, DOC_ID)
 
-    if (jsonStr.length < CHUNK_SIZE) {
-      // Safe in a single document
-      await setDoc(docRef, {
-        isChunked: false,
-        payload: jsonStr,
-        _lastSavedAt: cleanData._lastSavedAt,
-        _cloudSyncedAt: cleanData._cloudSyncedAt
-      })
-    } else {
-      // Chunk across multiple documents to never exceed Firestore 1MB limits
-      const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE)
-      for (let i = 0; i < totalChunks; i++) {
-        const chunkPart = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
-        await setDoc(doc(db, COLLECTION_NAME, `chunk_${i}`), {
-          data: chunkPart,
-          index: i,
-          updatedAt: Date.now()
-        })
+      if (jsonStr.length < CHUNK_SIZE) {
+        // Safe in a single document
+        await withTimeout(setDoc(docRef, {
+          isChunked: false,
+          payload: jsonStr,
+          _lastSavedAt: cleanData._lastSavedAt,
+          _cloudSyncedAt: cleanData._cloudSyncedAt
+        }), 20000)
+      } else {
+        // Chunk across multiple documents to never exceed Firestore 1MB limits
+        const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE)
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkPart = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
+          await withTimeout(setDoc(doc(db, COLLECTION_NAME, `chunk_${i}`), {
+            data: chunkPart,
+            index: i,
+            updatedAt: Date.now()
+          }), 20000)
+        }
+        await withTimeout(setDoc(docRef, {
+          isChunked: true,
+          chunkCount: totalChunks,
+          _lastSavedAt: cleanData._lastSavedAt,
+          _cloudSyncedAt: cleanData._cloudSyncedAt
+        }), 20000)
       }
-      await setDoc(docRef, {
-        isChunked: true,
-        chunkCount: totalChunks,
-        _lastSavedAt: cleanData._lastSavedAt,
-        _cloudSyncedAt: cleanData._cloudSyncedAt
-      })
-    }
 
-    console.log('Successfully synced content to Firebase cloud!')
-    return true
-  } catch (err) {
-    console.error('Failed to sync content to Firebase cloud:', err)
-    return false
+      console.log(`Successfully synced content to Firebase cloud (attempt ${attempt})!`)
+      return true
+    } catch (err) {
+      console.warn(`Cloud sync attempt ${attempt} failed:`, err?.message || err)
+      if (attempt < maxRetries) {
+        // Wait 1.2 seconds for socket or single-document rate-limit to clear before retrying
+        await new Promise(r => setTimeout(r, 1200))
+      } else {
+        console.error('Failed to sync content to Firebase cloud after retries:', err)
+        return false
+      }
+    }
   }
+  return false
 }
 
 // Pull content once
