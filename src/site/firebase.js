@@ -19,22 +19,28 @@ export const DEFAULT_FIREBASE_CONFIG = {
 // Load saved custom config or default to built-in project config
 export function getStoredFirebaseConfig() {
   try {
-    const saved = localStorage.getItem(FIREBASE_CONFIG_KEY)
-    if (saved) return JSON.parse(saved)
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(FIREBASE_CONFIG_KEY)
+      if (saved) return JSON.parse(saved)
+    }
   } catch (e) {
     console.warn('Error reading stored Firebase config:', e)
   }
 
   // Fallback to environment variables if provided
-  if (import.meta.env.VITE_FIREBASE_API_KEY && import.meta.env.VITE_FIREBASE_PROJECT_ID) {
-    return {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.appspot.com`,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-      appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY && import.meta.env?.VITE_FIREBASE_PROJECT_ID) {
+      return {
+        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
+        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.appspot.com`,
+        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+        appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+      }
     }
+  } catch (e) {
+    // ignore
   }
 
   return DEFAULT_FIREBASE_CONFIG
@@ -42,6 +48,7 @@ export function getStoredFirebaseConfig() {
 
 export function saveStoredFirebaseConfig(config) {
   try {
+    if (typeof localStorage === 'undefined') return
     if (!config) {
       localStorage.removeItem(FIREBASE_CONFIG_KEY)
     } else {
@@ -82,14 +89,21 @@ export function reinitFirebase(newConfig) {
 // Push latest portfolio content to cloud Firestore
 export async function pushContentToCloud(contentData) {
   const db = getDb()
-  if (!db) return false
+  if (!db) {
+    console.warn('Firebase DB not initialized, cannot push')
+    return false
+  }
 
   try {
+    // Strip any undefined fields so Firestore doesn't reject the write
+    const cleanData = JSON.parse(JSON.stringify(contentData))
     const docRef = doc(db, COLLECTION_NAME, DOC_ID)
     await setDoc(docRef, {
-      ...contentData,
-      _cloudSyncedAt: Date.now()
+      ...cleanData,
+      _cloudSyncedAt: Date.now(),
+      _lastSavedAt: cleanData._lastSavedAt || Date.now()
     }, { merge: true })
+    console.log('Successfully synced content to Firebase cloud!')
     return true
   } catch (err) {
     console.error('Failed to sync content to Firebase cloud:', err)

@@ -114,7 +114,8 @@ export function AdminModal() {
     importData,
     cloudConnected,
     saveFirebaseConfig,
-    getStoredFirebaseConfig
+    getStoredFirebaseConfig,
+    syncCurrentContentToCloud
   } = usePortfolio()
 
   // Cloud Config state
@@ -1361,12 +1362,23 @@ export function AdminModal() {
                             : '⚪ Local Mode: Edits sirf is browser me save ho rahe hain. Laptop aur Phone aapas me sync karne ke liye neeche Firebase connect karein.'}
                         </p>
                       </div>
-                      <button 
-                        className="admin-btn admin-btn-secondary admin-btn-sm"
-                        onClick={() => setShowCloudConfig(prev => !prev)}
-                      >
-                        {showCloudConfig ? 'Hide Config' : cloudConnected ? 'Edit Cloud Settings' : 'Connect Cloud Database'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {cloudConnected && (
+                          <button 
+                            className="admin-btn admin-btn-primary admin-btn-sm"
+                            onClick={syncCurrentContentToCloud}
+                            title="Force sync current laptop data to cloud"
+                          >
+                            <Cloud size={14} /> Push Current Content to Cloud
+                          </button>
+                        )}
+                        <button 
+                          className="admin-btn admin-btn-secondary admin-btn-sm"
+                          onClick={() => setShowCloudConfig(prev => !prev)}
+                        >
+                          {showCloudConfig ? 'Hide Config' : cloudConnected ? 'Edit Cloud Settings' : 'Connect Cloud Database'}
+                        </button>
+                      </div>
                     </div>
 
                     {showCloudConfig && (

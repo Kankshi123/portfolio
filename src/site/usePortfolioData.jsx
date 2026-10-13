@@ -175,9 +175,12 @@ export function PortfolioProvider({ children }) {
   // Subscribe to real-time Cloud updates (Laptop <-> Phone <-> Visitors sync)
   useEffect(() => {
     const unsubscribe = subscribeToCloudContent((cloudData) => {
-      if (cloudData && cloudData._lastSavedAt) {
+      if (cloudData && (cloudData.categories?.length || cloudData.photos?.length)) {
         setContent(prev => {
-          if (!prev._lastSavedAt || cloudData._lastSavedAt > prev._lastSavedAt) {
+          const cloudTime = cloudData._lastSavedAt || cloudData._cloudSyncedAt || 0
+          const localTime = prev._lastSavedAt || 0
+          // If cloud data is present and newer or local has no timestamp, sync
+          if (cloudTime >= localTime || !prev._lastSavedAt) {
             const merged = {
               ...defaultContent,
               ...cloudData,
@@ -187,6 +190,7 @@ export function PortfolioProvider({ children }) {
               categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
               photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
               heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
+              _lastSavedAt: Math.max(cloudTime, Date.now())
             }
             try {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
@@ -204,21 +208,54 @@ export function PortfolioProvider({ children }) {
     }
   }, [cloudConnected])
 
-  // Seed cloud if empty on initial connect
+  // Initial cloud sync check: if cloud has content, load it; if not, upload local content to seed cloud
   useEffect(() => {
     fetchContentFromCloud().then((cloudData) => {
-      if (!cloudData && content) {
-        pushContentToCloud(content)
+      if (cloudData && (cloudData.categories?.length || cloudData.photos?.length)) {
+        setContent(prev => {
+          const merged = {
+            ...defaultContent,
+            ...cloudData,
+            settings: { ...defaultContent.settings, ...(cloudData.settings || {}) },
+            about: { ...defaultContent.about, ...(cloudData.about || {}) },
+            contact: { ...defaultContent.contact, ...(cloudData.contact || {}) },
+            categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
+            photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
+            heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
+            _lastSavedAt: cloudData._lastSavedAt || Date.now()
+          }
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)) } catch (e) {}
+          idbSet(STORAGE_KEY, merged)
+          return merged
+        })
+      } else if (content && (!cloudData || !cloudData.categories)) {
+        pushContentToCloud({
+          ...content,
+          _lastSavedAt: Date.now()
+        })
       }
     }).catch(() => {})
   }, [])
+
+  const syncCurrentContentToCloud = async () => {
+    const success = await pushContentToCloud({
+      ...content,
+      _lastSavedAt: Date.now()
+    })
+    if (success) {
+      alert('Content successfully pushed to Cloud! It will now show on phone and for all visitors.')
+    } else {
+      alert('Failed to connect to Cloud. Please check your internet connection.')
+    }
+    return success
+  }
 
   const saveFirebaseConfig = (config) => {
     reinitFirebase(config)
     const isNowConnected = Boolean(getDb())
     setCloudConnected(isNowConnected)
     if (isNowConnected) {
-      pushContentToCloud(content)
+      pushContentToCloud({ ...content, _lastSavedAt: Date.now() })
       alert('Firebase Cloud Sync connected! All devices (phone & laptop) are now live synchronized.')
       return true
     } else {
@@ -565,7 +602,8 @@ export function PortfolioProvider({ children }) {
       saveContent,
       cloudConnected,
       saveFirebaseConfig,
-      getStoredFirebaseConfig
+      getStoredFirebaseConfig,
+      syncCurrentContentToCloud
     }}>
       {children}
     </PortfolioContext.Provider>
