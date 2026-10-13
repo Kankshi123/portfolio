@@ -124,6 +124,27 @@ export function AdminModal() {
     return current ? JSON.stringify(current, null, 2) : ''
   })
   const [showCloudConfig, setShowCloudConfig] = useState(false)
+  const [cloudSyncing, setCloudSyncing] = useState(false)
+  const [cloudSyncFeedback, setCloudSyncFeedback] = useState(null)
+
+  const handlePushToCloud = async () => {
+    if (cloudSyncing) return
+    setCloudSyncing(true)
+    setCloudSyncFeedback(null)
+    try {
+      const ok = await syncCurrentContentToCloud()
+      if (ok) {
+        setCloudSyncFeedback({ type: 'success', text: 'Cloud sync successful! Phone & laptop are now 100% updated.' })
+      } else {
+        setCloudSyncFeedback({ type: 'error', text: 'Sync failed. Please check internet connection or Firebase setup.' })
+      }
+    } catch (err) {
+      setCloudSyncFeedback({ type: 'error', text: 'Sync error: ' + (err?.message || 'Unknown error') })
+    } finally {
+      setCloudSyncing(false)
+      setTimeout(() => setCloudSyncFeedback(null), 6000)
+    }
+  }
 
   // PIN login state
   const [pinInput, setPinInput] = useState('')
@@ -1365,14 +1386,19 @@ export function AdminModal() {
                       <div style={{ display: 'flex', gap: '8px' }}>
                         {cloudConnected && (
                           <button 
+                            type="button"
                             className="admin-btn admin-btn-primary admin-btn-sm"
-                            onClick={syncCurrentContentToCloud}
+                            onClick={handlePushToCloud}
+                            disabled={cloudSyncing}
                             title="Force sync current laptop data to cloud"
+                            style={{ opacity: cloudSyncing ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
-                            <Cloud size={14} /> Push Current Content to Cloud
+                            <Cloud size={14} /> 
+                            {cloudSyncing ? 'Syncing to Cloud...' : 'Push Current Content to Cloud'}
                           </button>
                         )}
                         <button 
+                          type="button"
                           className="admin-btn admin-btn-secondary admin-btn-sm"
                           onClick={() => setShowCloudConfig(prev => !prev)}
                         >
@@ -1380,6 +1406,24 @@ export function AdminModal() {
                         </button>
                       </div>
                     </div>
+
+                    {cloudSyncFeedback && (
+                      <div style={{
+                        marginTop: '12px',
+                        padding: '10px 14px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: cloudSyncFeedback.type === 'success' ? '#ecfdf5' : '#fef2f2',
+                        color: cloudSyncFeedback.type === 'success' ? '#065f46' : '#991b1b',
+                        border: `1px solid ${cloudSyncFeedback.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        {cloudSyncFeedback.type === 'success' ? '✅' : '❌'} {cloudSyncFeedback.text}
+                      </div>
+                    )}
 
                     {showCloudConfig && (
                       <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #eee' }}>

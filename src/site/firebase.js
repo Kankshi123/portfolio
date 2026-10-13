@@ -86,7 +86,44 @@ export function reinitFirebase(newConfig) {
   return getDb()
 }
 
-// Push latest portfolio content to cloud Firestore
+const CHUNK_SIZE = 700000 // 700KB per Firestore document (safe under 1048487 bytes limit)
+
+// Reconstruct complete JSON content from single payload, chunks, or legacy fields
+async function reconstructContent(docData, db) {
+  if (!docData) return null
+
+  // 1. Chunked documents
+  if (docData.isChunked && docData.chunkCount) {
+    try {
+      let combined = ''
+      for (let i = 0; i < docData.chunkCount; i++) {
+        const chunkSnap = await getDoc(doc(db, COLLECTION_NAME, `chunk_${i}`))
+        if (chunkSnap.exists()) {
+          combined += (chunkSnap.data()?.data || '')
+        }
+      }
+      if (combined) {
+        return JSON.parse(combined)
+      }
+    } catch (e) {
+      console.error('Error reconstructing chunked Firestore content:', e)
+    }
+  }
+
+  // 2. Single payload string
+  if (docData.payload) {
+    try {
+      return JSON.parse(docData.payload)
+    } catch (e) {
+      console.error('Error parsing Firestore payload:', e)
+    }
+  }
+
+  // 3. Direct document fields (legacy fallback)
+  return docData
+}
+
+// Push latest portfolio content to cloud Firestore (with automatic chunking for large media)
 export async function pushContentToCloud(contentData) {
   const db = getDb()
   if (!db) {
@@ -95,14 +132,41 @@ export async function pushContentToCloud(contentData) {
   }
 
   try {
-    // Strip any undefined fields so Firestore doesn't reject the write
+    // Strip any undefined fields
     const cleanData = JSON.parse(JSON.stringify(contentData))
+    cleanData._lastSavedAt = cleanData._lastSavedAt || Date.now()
+    cleanData._cloudSyncedAt = Date.now()
+    const jsonStr = JSON.stringify(cleanData)
+
     const docRef = doc(db, COLLECTION_NAME, DOC_ID)
-    await setDoc(docRef, {
-      ...cleanData,
-      _cloudSyncedAt: Date.now(),
-      _lastSavedAt: cleanData._lastSavedAt || Date.now()
-    }, { merge: true })
+
+    if (jsonStr.length < CHUNK_SIZE) {
+      // Safe in a single document
+      await setDoc(docRef, {
+        isChunked: false,
+        payload: jsonStr,
+        _lastSavedAt: cleanData._lastSavedAt,
+        _cloudSyncedAt: cleanData._cloudSyncedAt
+      })
+    } else {
+      // Chunk across multiple documents to never exceed Firestore 1MB limits
+      const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE)
+      for (let i = 0; i < totalChunks; i++) {
+        const chunkPart = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
+        await setDoc(doc(db, COLLECTION_NAME, `chunk_${i}`), {
+          data: chunkPart,
+          index: i,
+          updatedAt: Date.now()
+        })
+      }
+      await setDoc(docRef, {
+        isChunked: true,
+        chunkCount: totalChunks,
+        _lastSavedAt: cleanData._lastSavedAt,
+        _cloudSyncedAt: cleanData._cloudSyncedAt
+      })
+    }
+
     console.log('Successfully synced content to Firebase cloud!')
     return true
   } catch (err) {
@@ -120,7 +184,7 @@ export async function fetchContentFromCloud() {
     const docRef = doc(db, COLLECTION_NAME, DOC_ID)
     const snap = await getDoc(docRef)
     if (snap.exists()) {
-      return snap.data()
+      return await reconstructContent(snap.data(), db)
     }
   } catch (err) {
     console.warn('Error fetching cloud content:', err)
@@ -135,10 +199,12 @@ export function subscribeToCloudContent(onUpdate) {
 
   try {
     const docRef = doc(db, COLLECTION_NAME, DOC_ID)
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    const unsubscribe = onSnapshot(docRef, async (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data()
-        onUpdate(data)
+        const data = await reconstructContent(docSnap.data(), db)
+        if (data) {
+          onUpdate(data)
+        }
       }
     }, (error) => {
       console.warn('Firebase snapshot listener error:', error)

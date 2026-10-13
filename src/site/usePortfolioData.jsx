@@ -247,16 +247,16 @@ export function PortfolioProvider({ children }) {
   }, [])
 
   const syncCurrentContentToCloud = async () => {
-    const success = await pushContentToCloud({
-      ...content,
-      _lastSavedAt: Date.now()
-    })
-    if (success) {
-      alert('Content successfully pushed to Cloud! It will now show on phone and for all visitors.')
-    } else {
-      alert('Failed to connect to Cloud. Please check your internet connection.')
+    try {
+      const success = await pushContentToCloud({
+        ...content,
+        _lastSavedAt: Date.now()
+      })
+      return Boolean(success)
+    } catch (e) {
+      console.error('syncCurrentContentToCloud error:', e)
+      return false
     }
-    return success
   }
 
   const saveFirebaseConfig = (config) => {
