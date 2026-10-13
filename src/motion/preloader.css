@@ -1,0 +1,15 @@
+.cinematic-preloader{position:fixed;inset:0;z-index:1000;pointer-events:none;color:#222;background:transparent}
+.preloader-curtain{position:absolute;left:0;width:100%;height:50.1%;background:#F7F6F4;will-change:transform}
+.preloader-curtain-top{top:0}
+.preloader-curtain-bottom{top:49.9%}
+.preloader-content{position:absolute;z-index:2;top:50%;left:50%;width:min(320px,78vw);display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-50%)}
+.preloader-name{display:flex;min-height:36px;overflow:hidden;font:400 21px/1.2 'Bodoni Moda',serif;letter-spacing:.2em;text-transform:uppercase}
+.preloader-name span{display:inline-block;white-space:pre}
+.preloader-caption{margin-top:11px;font:400 8px Jost,sans-serif;letter-spacing:.28em;color:#79756f}
+.preloader-progress{width:156px;height:1px;margin-top:35px;background:#ddd8d0;overflow:hidden}
+.preloader-progress span{display:block;width:0;height:100%;background:var(--accent-champagne)}
+.preloader-counter{margin-top:12px;color:#77716a;font:400 9px Jost,sans-serif;letter-spacing:.2em;font-variant-numeric:tabular-nums}
+.preloader-skip{position:absolute;z-index:3;top:27px;right:30px;pointer-events:auto;border:0;background:transparent;padding:10px;color:#68645e;font:400 9px Jost,sans-serif;letter-spacing:.18em;text-transform:uppercase;cursor:pointer}
+.preloader-skip:disabled{opacity:0;pointer-events:none}
+@media(max-width:640px){.preloader-name{font-size:18px}.preloader-skip{top:16px;right:14px}}
+@media(prefers-reduced-motion:reduce){.cinematic-preloader{display:none}}
