@@ -190,7 +190,7 @@ export function PortfolioProvider({ children }) {
               categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
               photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
               heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
-              _lastSavedAt: Math.max(cloudTime, Date.now())
+              _lastSavedAt: cloudTime
             }
             try {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
@@ -231,7 +231,7 @@ export function PortfolioProvider({ children }) {
             categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
             photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
             heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
-            _lastSavedAt: Math.max(cloudTime, localTime, Date.now())
+            _lastSavedAt: cloudTime
           }
           try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)) } catch (e) {}
           idbSet(STORAGE_KEY, merged)
