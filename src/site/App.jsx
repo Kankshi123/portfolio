@@ -90,6 +90,45 @@ function useSecretAdminTap(requiredTaps = 3) {
   }
 }
 
+function MobilePortfolioAccordion({ categories, onClose }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mobile-accordion">
+      <button
+        className="mobile-accordion-toggle"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+      >
+        Portfolio
+        <span className={`mobile-accordion-arrow${open ? ' open' : ''}`}>▾</span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="mobile-accordion-panel"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            style={{ overflow: 'hidden' }}
+          >
+            {categories.map(category => (
+              <Link
+                key={category.slug}
+                to={`/portfolio/${category.slug}`}
+                className="mobile-accordion-item"
+                onClick={() => { setOpen(false); onClose() }}
+              >
+                {category.title}
+              </Link>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 function Header() {
   const { settings, categories } = usePublicContent()
   const triggerAdmin = useSecretAdminTap(3)
@@ -117,7 +156,9 @@ function Header() {
       <button className="menu-toggle" aria-label={mobile ? 'Close menu' : 'Open menu'} onClick={() => setMobile(!mobile)}>{mobile ? <X/> : <Menu/>}</button>
     </header>
     <AnimatePresence>{mobile && <motion.nav className="mobile-menu" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .35 }} aria-label="Mobile navigation">
-      {[['Portfolio', '/#portfolio'], ['About', '/about'], ['Contact', '/contact']].map(([label, to]) => <Link key={label} onClick={close} to={to}>{label}</Link>)}
+      <MobilePortfolioAccordion categories={categories} onClose={close} />
+      <Link onClick={close} to="/about">About</Link>
+      <Link onClick={close} to="/contact">Contact</Link>
       <a onClick={close} href={`https://instagram.com/${handle.replace('@','')}`}>Instagram</a>
       <small onClick={triggerAdmin} style={{ cursor: 'pointer', userSelect: 'none' }}>BASED IN {identity.city.toUpperCase()}, INDIA</small>
     </motion.nav>}</AnimatePresence>

@@ -3,7 +3,7 @@ import { localContent as defaultContent } from './content'
 
 const STORAGE_KEY = 'portfolio_cms_content_v1'
 const ADMIN_PIN_KEY = 'portfolio_admin_pin_v1'
-const DEFAULT_PIN = '1234'
+const DEFAULT_PIN = '7253'
 
 const PortfolioContext = createContext(null)
 

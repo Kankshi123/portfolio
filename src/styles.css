@@ -698,3 +698,57 @@
   }
 }
 
+/* --- MOBILE PORTFOLIO ACCORDION --- */
+.mobile-accordion {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.mobile-accordion-toggle {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: 400 clamp(2rem, 9vw, 3.6rem) 'Bodoni Moda', serif;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  line-height: 1.1;
+}
+.mobile-accordion-arrow {
+  font-size: 1.4rem;
+  display: inline-block;
+  transition: transform 0.3s ease;
+  font-family: sans-serif;
+  line-height: 1;
+  margin-top: 4px;
+}
+.mobile-accordion-arrow.open {
+  transform: rotate(180deg);
+}
+.mobile-accordion-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  padding-top: 8px;
+}
+.mobile-accordion-item {
+  font: 400 clamp(1.1rem, 5vw, 1.6rem) 'Jost', sans-serif !important;
+  letter-spacing: .18em !important;
+  text-transform: uppercase;
+  color: #555 !important;
+  padding: 10px 0;
+  display: block;
+  text-align: center;
+  transition: color 0.2s;
+}
+.mobile-accordion-item:active,
+.mobile-accordion-item:hover {
+  color: #1A1A1A !important;
+}
