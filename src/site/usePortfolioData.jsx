@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect, createContext, useContext, useRef } from 'react'
 import { localContent as defaultContent } from './content'
 import { 
   pushContentToCloud, 
@@ -94,6 +94,7 @@ const sanitizePhotos = (photos) => {
 const PortfolioContext = createContext(null)
 
 export function PortfolioProvider({ children }) {
+  const cloudPushTimer = useRef(null)
   const [content, setContent] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
@@ -278,7 +279,11 @@ export function PortfolioProvider({ children }) {
       idbSet(STORAGE_KEY, finalized)
 
       // 3. Push to Firebase Cloud Firestore for real-time live sync across Laptop & Phone
-      pushContentToCloud(finalized)
+      // Coalesce rapid edits so uploads don't pile up on mobile connections.
+      if (cloudPushTimer.current) clearTimeout(cloudPushTimer.current)
+      cloudPushTimer.current = setTimeout(() => {
+        pushContentToCloud(finalized)
+      }, 600)
 
       return finalized
     })

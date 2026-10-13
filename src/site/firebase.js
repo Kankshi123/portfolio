@@ -87,6 +87,7 @@ export function reinitFirebase(newConfig) {
 }
 
 const CHUNK_SIZE = 700000 // 700KB per Firestore document (safe under 1048487 bytes limit)
+const SYNC_TIMEOUT_MS = 45000
 
 // Reconstruct complete JSON content from single payload, chunks, or legacy fields
 async function reconstructContent(docData, db) {
@@ -123,7 +124,7 @@ async function reconstructContent(docData, db) {
   return docData
 }
 
-const withTimeout = (promise, ms = 20000) => {
+const withTimeout = (promise, ms = SYNC_TIMEOUT_MS) => {
   return Promise.race([
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error('Cloud request timed out')), ms))
@@ -155,24 +156,26 @@ export async function pushContentToCloud(contentData, maxRetries = 2) {
           payload: jsonStr,
           _lastSavedAt: cleanData._lastSavedAt,
           _cloudSyncedAt: cleanData._cloudSyncedAt
-        }), 20000)
+        }), SYNC_TIMEOUT_MS)
       } else {
         // Chunk across multiple documents to never exceed Firestore 1MB limits
         const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE)
-        for (let i = 0; i < totalChunks; i++) {
+        // Upload chunks concurrently to avoid slow, serial mobile uploads.
+        const uploadChunks = Array.from({ length: totalChunks }, (_, i) => {
           const chunkPart = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
-          await withTimeout(setDoc(doc(db, COLLECTION_NAME, `chunk_${i}`), {
+          return withTimeout(setDoc(doc(db, COLLECTION_NAME, `chunk_${i}`), {
             data: chunkPart,
             index: i,
             updatedAt: Date.now()
-          }), 20000)
-        }
+          }), SYNC_TIMEOUT_MS)
+        })
+        await Promise.all(uploadChunks)
         await withTimeout(setDoc(docRef, {
           isChunked: true,
           chunkCount: totalChunks,
           _lastSavedAt: cleanData._lastSavedAt,
           _cloudSyncedAt: cleanData._cloudSyncedAt
-        }), 20000)
+        }), SYNC_TIMEOUT_MS)
       }
 
       console.log(`Successfully synced content to Firebase cloud (attempt ${attempt})!`)
