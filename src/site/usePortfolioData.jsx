@@ -208,11 +208,20 @@ export function PortfolioProvider({ children }) {
     }
   }, [cloudConnected])
 
-  // Initial cloud sync check: if cloud has content, load it; if not, upload local content to seed cloud
+  // Initial cloud sync check: if cloud has content, load it; if local is newer, upload local to cloud
   useEffect(() => {
     fetchContentFromCloud().then((cloudData) => {
       if (cloudData && (cloudData.categories?.length || cloudData.photos?.length)) {
         setContent(prev => {
+          const cloudTime = cloudData._lastSavedAt || cloudData._cloudSyncedAt || 0
+          const localTime = prev?._lastSavedAt || 0
+
+          // If local device has newer edits, keep local and push to cloud
+          if (localTime > cloudTime) {
+            pushContentToCloud(prev)
+            return prev
+          }
+
           const merged = {
             ...defaultContent,
             ...cloudData,
@@ -222,7 +231,7 @@ export function PortfolioProvider({ children }) {
             categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
             photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
             heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
-            _lastSavedAt: cloudData._lastSavedAt || Date.now()
+            _lastSavedAt: Math.max(cloudTime, localTime, Date.now())
           }
           try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)) } catch (e) {}
           idbSet(STORAGE_KEY, merged)
