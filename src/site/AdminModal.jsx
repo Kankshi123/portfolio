@@ -1,11 +1,91 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   X, Plus, Trash2, Edit3, Image as ImageIcon, Settings, User, 
-  FolderPlus, Upload, Download, RefreshCw, Key, Check, AlertCircle, Eye, Layers
+  FolderPlus, Upload, Download, RefreshCw, Key, Check, AlertCircle, Eye, Layers, Loader2, Cloud, Globe
 } from 'lucide-react'
 import { usePortfolio } from './usePortfolioData'
 import { imageUrl } from './content'
+
+// Automatically compress device images client-side before Base64 storage
+const compressImage = (file, maxWidth = 1600, quality = 0.8) => {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) {
+      return reject(new Error('Selected file is not an image'))
+    }
+    if (file.type === 'image/svg+xml') {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve(e.target.result)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+      return
+    }
+    const reader = new FileReader()
+    reader.onerror = reject
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        let width = img.width
+        let height = img.height
+        if (width > maxWidth || height > maxWidth) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width)
+            width = maxWidth
+          } else {
+            width = Math.round((width * maxWidth) / height)
+            height = maxWidth
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        const compressed = canvas.toDataURL('image/jpeg', quality)
+        resolve(compressed)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+// Automatically compresses uncompressed/large Base64 data URLs before storage
+const compressDataUrl = (dataUrl, maxWidth = 1400, quality = 0.78) => {
+  return new Promise((resolve) => {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/') || dataUrl.length < 50000) {
+      return resolve(dataUrl)
+    }
+    const img = new Image()
+    img.onload = () => {
+      let width = img.width
+      let height = img.height
+      if (width > maxWidth || height > maxWidth) {
+        if (width > height) {
+          height = Math.round((height * maxWidth) / width)
+          width = maxWidth
+        } else {
+          width = Math.round((width * maxWidth) / height)
+          height = maxWidth
+        }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, width, height)
+      try {
+        const compressed = canvas.toDataURL('image/jpeg', quality)
+        resolve(compressed)
+      } catch {
+        resolve(dataUrl)
+      }
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
 
 export function AdminModal() {
   const {
@@ -29,9 +109,20 @@ export function AdminModal() {
     editCategory,
     deleteCategory,
     resetToDefault,
+    syncLatestCodePhotos,
     exportData,
-    importData
+    importData,
+    cloudConnected,
+    saveFirebaseConfig,
+    getStoredFirebaseConfig
   } = usePortfolio()
+
+  // Cloud Config state
+  const [firebaseConfigInput, setFirebaseConfigInput] = useState(() => {
+    const current = getStoredFirebaseConfig?.()
+    return current ? JSON.stringify(current, null, 2) : ''
+  })
+  const [showCloudConfig, setShowCloudConfig] = useState(false)
 
   // PIN login state
   const [pinInput, setPinInput] = useState('')
@@ -86,13 +177,37 @@ export function AdminModal() {
     heroImageSrc: content.about?.heroImage?.src || ''
   })
 
+  // Sync state whenever content changes
+  useEffect(() => {
+    if (content) {
+      setAboutBannerSrc(content.about?.heroImage?.src || 'photo-1523438885200-e635ba2c371e')
+      setAboutBannerAlt(content.about?.heroImage?.alt || 'About Kashif hero banner')
+      setContactBannerSrc(content.contact?.heroImage?.src || 'photo-1511795409834-ef04bbd61622')
+      setContactBannerAlt(content.contact?.heroImage?.alt || 'Work with Kashif hero banner')
+      setSettingsForm({ ...content.settings })
+      setAboutForm({
+        heading: content.about?.heading || '',
+        teaser: content.settings?.aboutTeaser || '',
+        pullQuote: content.settings?.pullQuote || '',
+        portraitSrc: content.about?.portrait?.src || '',
+        heroImageSrc: content.about?.heroImage?.src || ''
+      })
+    }
+  }, [content])
+
+  // Compression & file upload status
+  const [isUploading, setIsUploading] = useState(false)
+
   // PIN change state
   const [newPin, setNewPin] = useState('')
   const fileInputRef = useRef(null)
+  const categoryFileInputRef = useRef(null)
   const backupInputRef = useRef(null)
   const slideFileRef = useRef(null)
   const aboutBannerFileRef = useRef(null)
   const contactBannerFileRef = useRef(null)
+  const portraitFileRef = useRef(null)
+  const photoFormRef = useRef(null)
 
   if (!isAdminOpen) return null
 
@@ -107,37 +222,43 @@ export function AdminModal() {
     }
   }
 
-  // Handle file upload to Base64
-  const handleFileUpload = (e, callback) => {
+  // Handle file upload with automatic client-side compression
+  const handleFileUpload = async (e, callback) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 2.5 * 1024 * 1024) {
-      alert('File is quite large (> 2.5MB). Please use an image URL or compress the image so it fits within browser storage.')
-      return
+    setIsUploading(true)
+    try {
+      const compressedData = await compressImage(file, 1600, 0.8)
+      callback(compressedData)
+    } catch (err) {
+      console.warn('Compression failed, using standard reader:', err)
+      const reader = new FileReader()
+      reader.onload = (event) => callback(event.target.result)
+      reader.readAsDataURL(file)
+    } finally {
+      setIsUploading(false)
+      if (e.target) e.target.value = ''
     }
-
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      callback(event.target.result)
-    }
-    reader.readAsDataURL(file)
   }
 
-  // Open Edit Photo Modal
+  // Open Edit Photo Modal and auto-scroll to form
   const startEditPhoto = (photo) => {
     setEditingPhotoId(photo._id)
     setPhotoForm({
       src: photo.image?.src || photo.src || '',
       caption: photo.caption || '',
-      altText: photo.altText || '',
+      altText: photo.altText || photo.image?.alt || '',
       categorySlug: photo.categorySlug || content.categories[0]?.slug || '',
       isFeatured: Boolean(photo.isFeatured)
     })
     setIsAddingPhoto(true)
+    setTimeout(() => {
+      photoFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 60)
   }
 
-  const handleSavePhoto = (e) => {
+  const handleSavePhoto = async (e) => {
     e.preventDefault()
     if (!photoForm.src.trim()) {
       alert('Please provide an image link or upload an image file.')
@@ -149,16 +270,22 @@ export function AdminModal() {
       return
     }
 
+    const compressedSrc = await compressDataUrl(photoForm.src.trim())
+
     if (editingPhotoId) {
       editPhoto(editingPhotoId, {
         ...photoForm,
+        src: compressedSrc,
         categorySlug: slug
       })
+      alert('Photograph updated successfully!')
     } else {
       addPhoto({
         ...photoForm,
+        src: compressedSrc,
         categorySlug: slug
       })
+      alert('New photograph added successfully!')
     }
 
     setIsAddingPhoto(false)
@@ -177,17 +304,24 @@ export function AdminModal() {
     setIsAddingCategory(true)
   }
 
-  const handleSaveCategory = (e) => {
+  const handleSaveCategory = async (e) => {
     e.preventDefault()
     if (!categoryForm.title.trim() || !categoryForm.src.trim()) {
       alert('Please fill in category title and cover image.')
       return
     }
 
+    const compressedSrc = await compressDataUrl(categoryForm.src.trim())
+
     if (editingCategorySlug) {
-      editCategory(editingCategorySlug, categoryForm)
+      editCategory(editingCategorySlug, {
+        ...categoryForm,
+        src: compressedSrc
+      })
+      alert('Category updated successfully!')
     } else {
-      addCategory(categoryForm.title, categoryForm.src, categoryForm.description)
+      addCategory(categoryForm.title, compressedSrc, categoryForm.description)
+      alert('New category created successfully!')
     }
 
     setIsAddingCategory(false)
@@ -203,32 +337,34 @@ export function AdminModal() {
   }
 
   // Save About page
-  const handleSaveAbout = (e) => {
+  const handleSaveAbout = async (e) => {
     e.preventDefault()
+    const portraitSrc = aboutForm.portraitSrc ? await compressDataUrl(aboutForm.portraitSrc.trim()) : ''
     updateSettings({
       aboutTeaser: aboutForm.teaser,
       pullQuote: aboutForm.pullQuote
     })
     updateAbout({
       heading: aboutForm.heading,
-      portrait: { src: aboutForm.portraitSrc, alt: 'Photographer Portrait' },
+      portrait: { src: portraitSrc, alt: 'Photographer Portrait' },
       heroImage: { src: aboutForm.heroImageSrc, alt: 'About Hero Image' }
     })
     alert('About page details updated successfully!')
   }
 
   // Save Home Slide
-  const handleSaveSlide = (e) => {
+  const handleSaveSlide = async (e) => {
     e.preventDefault()
     if (!slideForm.src.trim()) {
       alert('Please specify an image URL or upload an image file.')
       return
     }
+    const compressedSrc = await compressDataUrl(slideForm.src.trim())
     if (editingSlideIndex !== null) {
-      editHeroSlide(editingSlideIndex, slideForm)
+      editHeroSlide(editingSlideIndex, { ...slideForm, src: compressedSrc })
       alert(`Home background slide #${editingSlideIndex + 1} updated!`)
     } else {
-      addHeroSlide(slideForm)
+      addHeroSlide({ ...slideForm, src: compressedSrc })
       alert('New Home background slide added!')
     }
     setIsAddingSlide(false)
@@ -237,25 +373,27 @@ export function AdminModal() {
   }
 
   // Save About Banner
-  const handleSaveAboutHero = () => {
+  const handleSaveAboutHero = async () => {
     if (!aboutBannerSrc.trim()) {
       alert('Please enter an image URL or upload an image.')
       return
     }
+    const compressedSrc = await compressDataUrl(aboutBannerSrc.trim())
     updateAbout({
-      heroImage: { src: aboutBannerSrc.trim(), alt: aboutBannerAlt.trim() || 'About hero banner' }
+      heroImage: { src: compressedSrc, alt: aboutBannerAlt.trim() || 'About hero banner' }
     })
     alert('About page banner image updated successfully!')
   }
 
   // Save Contact Banner
-  const handleSaveContactHero = () => {
+  const handleSaveContactHero = async () => {
     if (!contactBannerSrc.trim()) {
       alert('Please enter an image URL or upload an image.')
       return
     }
+    const compressedSrc = await compressDataUrl(contactBannerSrc.trim())
     updateContact({
-      heroImage: { src: contactBannerSrc.trim(), alt: contactBannerAlt.trim() || 'Contact hero banner' }
+      heroImage: { src: compressedSrc, alt: contactBannerAlt.trim() || 'Contact hero banner' }
     })
     alert('Contact page banner image updated successfully!')
   }
@@ -400,7 +538,7 @@ export function AdminModal() {
 
                   {/* Add / Edit Photo Form */}
                   {isAddingPhoto ? (
-                    <div className="admin-card form-card">
+                    <div className="admin-card form-card" ref={photoFormRef}>
                       <h4>{editingPhotoId ? 'Edit Photograph' : 'Add New Photograph'}</h4>
                       <form onSubmit={handleSavePhoto}>
                         <div className="admin-form-group">
@@ -417,15 +555,16 @@ export function AdminModal() {
                               type="button" 
                               className="admin-btn admin-btn-secondary"
                               onClick={() => fileInputRef.current?.click()}
+                              disabled={isUploading}
                             >
-                              <Upload size={14} /> Upload Device File
+                              <Upload size={14} /> {isUploading ? 'Compressing...' : 'Upload Device File'}
                             </button>
                             <input 
                               type="file" 
                               ref={fileInputRef} 
                               accept="image/*" 
                               style={{ display: 'none' }}
-                              onChange={(e) => handleFileUpload(e, (dataUrl) => setPhotoForm({ ...photoForm, src: dataUrl }))}
+                              onChange={(e) => handleFileUpload(e, (dataUrl) => setPhotoForm(prev => ({ ...prev, src: dataUrl })))}
                             />
                           </div>
                           {photoForm.src && (
@@ -606,16 +745,17 @@ export function AdminModal() {
                             <button 
                               type="button" 
                               className="admin-btn admin-btn-secondary"
-                              onClick={() => fileInputRef.current?.click()}
+                              onClick={() => categoryFileInputRef.current?.click()}
+                              disabled={isUploading}
                             >
-                              <Upload size={14} /> Upload
+                              <Upload size={14} /> {isUploading ? 'Compressing...' : 'Upload'}
                             </button>
                             <input 
                               type="file" 
-                              ref={fileInputRef} 
+                              ref={categoryFileInputRef} 
                               accept="image/*" 
                               style={{ display: 'none' }}
-                              onChange={(e) => handleFileUpload(e, (dataUrl) => setCategoryForm({ ...categoryForm, src: dataUrl }))}
+                              onChange={(e) => handleFileUpload(e, (dataUrl) => setCategoryForm(prev => ({ ...prev, src: dataUrl })))}
                             />
                           </div>
                           {categoryForm.src && (
@@ -1115,6 +1255,39 @@ export function AdminModal() {
                         />
                       </div>
 
+                      <div className="admin-form-group">
+                        <label>Photographer Portrait Photo (Homepage Teaser)</label>
+                        <div className="admin-input-upload">
+                          <input 
+                            type="text" 
+                            className="admin-input"
+                            value={aboutForm.portraitSrc} 
+                            onChange={e => setAboutForm({ ...aboutForm, portraitSrc: e.target.value })} 
+                            placeholder="Unsplash ID, URL, or upload photo"
+                          />
+                          <button 
+                            type="button" 
+                            className="admin-btn-secondary"
+                            onClick={() => portraitFileRef.current?.click()}
+                            disabled={isUploading}
+                          >
+                            <Upload size={14}/> {isUploading ? 'Compressing...' : 'Upload Portrait'}
+                          </button>
+                          <input 
+                            type="file" 
+                            ref={portraitFileRef} 
+                            accept="image/*" 
+                            style={{ display: 'none' }} 
+                            onChange={e => handleFileUpload(e, base64 => setAboutForm(prev => ({ ...prev, portraitSrc: base64 })))} 
+                          />
+                        </div>
+                        {aboutForm.portraitSrc && (
+                          <div className="admin-preview-box" style={{ width: '90px', height: '90px', borderRadius: '50%', overflow: 'hidden', marginTop: '10px' }}>
+                            <img src={imageUrl(aboutForm.portraitSrc, 200)} alt="Portrait Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          </div>
+                        )}
+                      </div>
+
                       <div className="admin-form-actions">
                         <button type="submit" className="admin-btn admin-btn-primary">
                           <Check size={16}/> Save About Information
@@ -1172,6 +1345,94 @@ export function AdminModal() {
                         <Upload size={16}/> Restore from Backup File
                       </button>
                     </div>
+                  </div>
+
+                  {/* Cross-Device Cloud Sync Section */}
+                  <div className="admin-card" style={{ marginTop: '24px', borderLeft: cloudConnected ? '4px solid #10b981' : '4px solid #f59e0b' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                      <div>
+                        <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                          <Cloud size={18} color={cloudConnected ? '#10b981' : '#f59e0b'} />
+                          Cross-Device Cloud Sync (Laptop &amp; Phone)
+                        </h4>
+                        <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#666' }}>
+                          {cloudConnected 
+                            ? '🟢 Live Sync Active: Laptop ya Phone par koi bhi edit karte hi doosre device par turant live sync ho jata hai!'
+                            : '⚪ Local Mode: Edits sirf is browser me save ho rahe hain. Laptop aur Phone aapas me sync karne ke liye neeche Firebase connect karein.'}
+                        </p>
+                      </div>
+                      <button 
+                        className="admin-btn admin-btn-secondary admin-btn-sm"
+                        onClick={() => setShowCloudConfig(prev => !prev)}
+                      >
+                        {showCloudConfig ? 'Hide Config' : cloudConnected ? 'Edit Cloud Settings' : 'Connect Cloud Database'}
+                      </button>
+                    </div>
+
+                    {showCloudConfig && (
+                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #eee' }}>
+                        <div className="admin-form-group">
+                          <label style={{ fontSize: '12px', fontWeight: 600 }}>Paste Firebase Config (JSON format):</label>
+                          <textarea 
+                            className="admin-input" 
+                            rows={6}
+                            style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            placeholder={`{\n  "apiKey": "AIzaSy...",\n  "projectId": "your-portfolio",\n  "appId": "1:1234..."\n}`}
+                            value={firebaseConfigInput}
+                            onChange={(e) => setFirebaseConfigInput(e.target.value)}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
+                          <button 
+                            className="admin-btn admin-btn-primary admin-btn-sm"
+                            onClick={() => {
+                              try {
+                                const parsed = JSON.parse(firebaseConfigInput.trim())
+                                saveFirebaseConfig(parsed)
+                                setShowCloudConfig(false)
+                              } catch (e) {
+                                alert('Please enter valid Firebase JSON config.')
+                              }
+                            }}
+                          >
+                            <Check size={14} /> Save &amp; Connect Live Sync
+                          </button>
+                          {cloudConnected && (
+                            <button 
+                              className="admin-btn admin-btn-secondary admin-btn-sm"
+                              onClick={() => {
+                                if (confirm('Disconnect Firebase cloud sync? Website will revert to local browser storage.')) {
+                                  saveFirebaseConfig(null)
+                                  setFirebaseConfigInput('')
+                                  setShowCloudConfig(false)
+                                }
+                              }}
+                            >
+                              Disconnect Cloud
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ marginTop: '14px', background: '#f8f9fa', padding: '12px', borderRadius: '6px', fontSize: '12px', color: '#555', lineHeight: '1.6' }}>
+                          <strong>Free Firebase 2 minute me connect karne ka tarika:</strong>
+                          <ol style={{ margin: '6px 0 0', paddingLeft: '20px' }}>
+                            <li><a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{ color: '#0066cc', textDecoration: 'underline' }}>console.firebase.google.com</a> par jakar <strong>"Create a project"</strong> karein (100% Free).</li>
+                            <li>Left menu se <strong>Build &gt; Firestore Database &gt; Create Database</strong> click karein (Start in <em>test mode</em>).</li>
+                            <li>Project Overview ke bagal me Gear (Settings) icon &gt; Project Settings &gt; General &gt; <strong>"Add Web app" (&lt;/&gt;)</strong> karein aur wahan se <code>firebaseConfig</code> copy karke upar paste karke Save karein!</li>
+                          </ol>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reload Latest Photos from Code */}
+                  <div className="admin-card" style={{ marginTop: '24px' }}>
+                    <h4>Reload Latest Photos from Code</h4>
+                    <p>If you modified photography collections or images in the code, click here to reload them into the portfolio without losing your settings or categories.</p>
+                    <button className="admin-btn admin-btn-secondary" onClick={syncLatestCodePhotos} style={{ marginTop: '14px' }}>
+                      <RefreshCw size={15}/> Reload Photos from Code
+                    </button>
                   </div>
 
                   {/* Factory Reset */}

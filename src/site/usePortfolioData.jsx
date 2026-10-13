@@ -1,9 +1,95 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { localContent as defaultContent } from './content'
+import { 
+  pushContentToCloud, 
+  subscribeToCloudContent, 
+  getStoredFirebaseConfig, 
+  reinitFirebase,
+  getDb,
+  fetchContentFromCloud 
+} from './firebase'
 
 const STORAGE_KEY = 'portfolio_cms_content_v1'
 const ADMIN_PIN_KEY = 'portfolio_admin_pin_v1'
 const DEFAULT_PIN = '7253'
+const DB_NAME = 'portfolio_cms_db'
+const DB_VERSION = 1
+const STORE_NAME = 'cms_store'
+
+// Lightweight IndexedDB helper for resilient high-capacity storage
+function openDb() {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') return resolve(null)
+    try {
+      const req = indexedDB.open(DB_NAME, DB_VERSION)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME)
+        }
+      }
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+async function idbGet(key) {
+  try {
+    const db = await openDb()
+    if (!db) return null
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly')
+      const store = tx.objectStore(STORE_NAME)
+      const req = store.get(key)
+      req.onsuccess = () => resolve(req.result || null)
+      req.onerror = () => resolve(null)
+    })
+  } catch {
+    return null
+  }
+}
+
+async function idbSet(key, value) {
+  try {
+    const db = await openDb()
+    if (!db) return false
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+      const req = store.put(value, key)
+      req.onsuccess = () => resolve(true)
+      req.onerror = () => resolve(false)
+    })
+  } catch {
+    return false
+  }
+}
+
+async function idbRemove(key) {
+  try {
+    const db = await openDb()
+    if (!db) return false
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+      const req = store.delete(key)
+      req.onsuccess = () => resolve(true)
+      req.onerror = () => resolve(false)
+    })
+  } catch {
+    return false
+  }
+}
+
+const sanitizePhotos = (photos) => {
+  return (photos || []).map((p, idx) => ({
+    ...p,
+    _id: p._id || `photo-${p.categorySlug || 'collection'}-${idx}-${Date.now()}`
+  }))
+}
 
 const PortfolioContext = createContext(null)
 
@@ -20,20 +106,46 @@ export function PortfolioProvider({ children }) {
           about: { ...defaultContent.about, ...(parsed.about || {}) },
           contact: { ...defaultContent.contact, ...(parsed.contact || {}) },
           categories: parsed.categories?.length ? parsed.categories : defaultContent.categories,
-          photos: parsed.photos?.length ? parsed.photos : defaultContent.photos,
+          photos: sanitizePhotos(parsed.photos?.length ? parsed.photos : defaultContent.photos),
           heroSlides: parsed.heroSlides?.length ? parsed.heroSlides : defaultContent.heroSlides,
         }
       }
     } catch (e) {
       console.warn('Failed to load portfolio storage:', e)
     }
-    return defaultContent
+    return {
+      ...defaultContent,
+      photos: sanitizePhotos(defaultContent.photos)
+    }
   })
 
   const [isAdminOpen, setIsAdminOpen] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
 
-  // Listen for #admin or hash changes
+  // Sync from IndexedDB in case it has newer or larger data
+  useEffect(() => {
+    idbGet(STORAGE_KEY).then(saved => {
+      if (saved && saved._lastSavedAt) {
+        setContent(prev => {
+          if (!prev._lastSavedAt || saved._lastSavedAt > prev._lastSavedAt) {
+            return {
+              ...defaultContent,
+              ...saved,
+              settings: { ...defaultContent.settings, ...(saved.settings || {}) },
+              about: { ...defaultContent.about, ...(saved.about || {}) },
+              contact: { ...defaultContent.contact, ...(saved.contact || {}) },
+              categories: saved.categories?.length ? saved.categories : defaultContent.categories,
+              photos: sanitizePhotos(saved.photos?.length ? saved.photos : defaultContent.photos),
+              heroSlides: saved.heroSlides?.length ? saved.heroSlides : defaultContent.heroSlides,
+            }
+          }
+          return prev
+        })
+      }
+    })
+  }, [])
+
+  // Listen for #admin or hash changes and shortcut
   useEffect(() => {
     const handleHash = () => {
       if (window.location.hash === '#admin') {
@@ -58,202 +170,314 @@ export function PortfolioProvider({ children }) {
     }
   }, [])
 
-  const saveContent = (newContent) => {
-    setContent(newContent)
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newContent))
-    } catch (e) {
-      console.error('Failed to save to localStorage:', e)
-      alert('Storage limit reached or local storage unavailable. If uploading large photos, try using image URLs or smaller image files.')
+  const [cloudConnected, setCloudConnected] = useState(() => Boolean(getDb()))
+
+  // Subscribe to real-time Cloud updates (Laptop <-> Phone <-> Visitors sync)
+  useEffect(() => {
+    const unsubscribe = subscribeToCloudContent((cloudData) => {
+      if (cloudData && cloudData._lastSavedAt) {
+        setContent(prev => {
+          if (!prev._lastSavedAt || cloudData._lastSavedAt > prev._lastSavedAt) {
+            const merged = {
+              ...defaultContent,
+              ...cloudData,
+              settings: { ...defaultContent.settings, ...(cloudData.settings || {}) },
+              about: { ...defaultContent.about, ...(cloudData.about || {}) },
+              contact: { ...defaultContent.contact, ...(cloudData.contact || {}) },
+              categories: cloudData.categories?.length ? cloudData.categories : defaultContent.categories,
+              photos: sanitizePhotos(cloudData.photos?.length ? cloudData.photos : defaultContent.photos),
+              heroSlides: cloudData.heroSlides?.length ? cloudData.heroSlides : defaultContent.heroSlides,
+            }
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+            } catch (e) { /* ignore */ }
+            idbSet(STORAGE_KEY, merged)
+            return merged
+          }
+          return prev
+        })
+      }
+    })
+
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    }
+  }, [cloudConnected])
+
+  // Seed cloud if empty on initial connect
+  useEffect(() => {
+    fetchContentFromCloud().then((cloudData) => {
+      if (!cloudData && content) {
+        pushContentToCloud(content)
+      }
+    }).catch(() => {})
+  }, [])
+
+  const saveFirebaseConfig = (config) => {
+    reinitFirebase(config)
+    const isNowConnected = Boolean(getDb())
+    setCloudConnected(isNowConnected)
+    if (isNowConnected) {
+      pushContentToCloud(content)
+      alert('Firebase Cloud Sync connected! All devices (phone & laptop) are now live synchronized.')
+      return true
+    } else {
+      alert('Cloud Sync disconnected. Portfolio is in local device mode.')
+      return false
     }
   }
 
-  const updateSettings = (newSettings) => {
-    saveContent({
-      ...content,
-      settings: { ...content.settings, ...newSettings }
+  // Functional saveContent to avoid stale state closures
+  const saveContent = (updaterOrContent) => {
+    setContent(prevContent => {
+      const nextContent = typeof updaterOrContent === 'function' 
+        ? updaterOrContent(prevContent) 
+        : updaterOrContent
+
+      const finalized = {
+        ...nextContent,
+        _lastSavedAt: Date.now()
+      }
+
+      // 1. Try saving to localStorage
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(finalized))
+      } catch (e) {
+        console.warn('LocalStorage quota or write error, IndexedDB will maintain changes:', e)
+      }
+
+      // 2. Save to IndexedDB (asynchronous, virtually unlimited quota for media)
+      idbSet(STORAGE_KEY, finalized)
+
+      // 3. Push to Firebase Cloud Firestore for real-time live sync across Laptop & Phone
+      pushContentToCloud(finalized)
+
+      return finalized
     })
+  }
+
+  const updateSettings = (newSettings) => {
+    saveContent(prev => ({
+      ...prev,
+      settings: { ...(prev.settings || {}), ...newSettings }
+    }))
   }
 
   const updateAbout = (newAbout) => {
-    saveContent({
-      ...content,
-      about: { ...content.about, ...newAbout }
-    })
+    saveContent(prev => ({
+      ...prev,
+      about: { ...(prev.about || {}), ...newAbout }
+    }))
   }
 
   const updateContact = (newContact) => {
-    saveContent({
-      ...content,
-      contact: { ...(content.contact || defaultContent.contact || {}), ...newContact }
-    })
+    saveContent(prev => ({
+      ...prev,
+      contact: { ...(prev.contact || defaultContent.contact || {}), ...newContact }
+    }))
   }
 
   // Hero Slides management (Home background images)
   const addHeroSlide = (slideData) => {
-    const currentSlides = content.heroSlides || []
-    const updated = [...currentSlides, { src: slideData.src, altText: slideData.altText || 'Hero background slide' }]
-    saveContent({
-      ...content,
-      heroSlides: updated
+    saveContent(prev => {
+      const currentSlides = prev.heroSlides || []
+      return {
+        ...prev,
+        heroSlides: [...currentSlides, { src: slideData.src, altText: slideData.altText || 'Hero background slide' }]
+      }
     })
   }
 
   const editHeroSlide = (index, slideData) => {
-    const currentSlides = [...(content.heroSlides || [])]
-    if (index >= 0 && index < currentSlides.length) {
-      currentSlides[index] = {
-        ...currentSlides[index],
-        src: slideData.src || currentSlides[index].src,
-        altText: slideData.altText !== undefined ? slideData.altText : currentSlides[index].altText
+    saveContent(prev => {
+      const currentSlides = [...(prev.heroSlides || [])]
+      if (index >= 0 && index < currentSlides.length) {
+        currentSlides[index] = {
+          ...currentSlides[index],
+          src: slideData.src || currentSlides[index].src,
+          altText: slideData.altText !== undefined ? slideData.altText : currentSlides[index].altText
+        }
       }
-      saveContent({
-        ...content,
+      return {
+        ...prev,
         heroSlides: currentSlides
-      })
-    }
+      }
+    })
   }
 
   const deleteHeroSlide = (index) => {
-    const currentSlides = (content.heroSlides || []).filter((_, i) => i !== index)
-    saveContent({
-      ...content,
-      heroSlides: currentSlides
-    })
+    saveContent(prev => ({
+      ...prev,
+      heroSlides: (prev.heroSlides || []).filter((_, i) => i !== index)
+    }))
   }
 
   const setHeroSlides = (slides) => {
-    saveContent({
-      ...content,
+    saveContent(prev => ({
+      ...prev,
       heroSlides: slides
-    })
+    }))
   }
 
   // Photo management
   const addPhoto = (photoData) => {
-    // photoData: { src, altText, caption, categorySlug, isFeatured }
     const newId = `custom-photo-${Date.now()}`
     const newPhoto = {
       _id: newId,
       categorySlug: photoData.categorySlug,
+      src: photoData.src,
       image: { src: photoData.src, alt: photoData.altText || photoData.caption || 'Photograph' },
       altText: photoData.altText || photoData.caption || '',
       caption: photoData.caption || '',
       isFeatured: Boolean(photoData.isFeatured),
     }
 
-    const updatedPhotos = [newPhoto, ...content.photos]
-    saveContent({
-      ...content,
-      photos: updatedPhotos
-    })
+    saveContent(prev => ({
+      ...prev,
+      photos: [newPhoto, ...(prev.photos || [])]
+    }))
   }
 
   const editPhoto = (photoId, updatedFields) => {
-    const updatedPhotos = content.photos.map(p => {
-      if (p._id === photoId) {
-        return {
-          ...p,
-          ...updatedFields,
-          image: {
-            ...p.image,
-            src: updatedFields.src || p.image?.src || p.src,
-            alt: updatedFields.altText ?? p.altText
-          },
-          altText: updatedFields.altText ?? p.altText,
-          caption: updatedFields.caption ?? p.caption,
-          categorySlug: updatedFields.categorySlug ?? p.categorySlug,
-          isFeatured: updatedFields.isFeatured !== undefined ? updatedFields.isFeatured : p.isFeatured
+    saveContent(prev => {
+      const updatedPhotos = (prev.photos || []).map((p) => {
+        // Match by _id or image src
+        const isMatch = p._id === photoId || (p.image?.src && p.image?.src === photoId)
+        if (isMatch) {
+          const newSrc = updatedFields.src || p.image?.src || p.src
+          const newAlt = updatedFields.altText !== undefined ? updatedFields.altText : (p.altText || p.image?.alt || '')
+          const newCaption = updatedFields.caption !== undefined ? updatedFields.caption : (p.caption || '')
+          const newCategory = updatedFields.categorySlug || p.categorySlug
+          const newFeatured = updatedFields.isFeatured !== undefined ? updatedFields.isFeatured : p.isFeatured
+
+          return {
+            ...p,
+            ...updatedFields,
+            src: newSrc,
+            image: {
+              ...(p.image || {}),
+              src: newSrc,
+              alt: newAlt
+            },
+            altText: newAlt,
+            caption: newCaption,
+            categorySlug: newCategory,
+            isFeatured: newFeatured
+          }
         }
+        return p
+      })
+
+      return {
+        ...prev,
+        photos: updatedPhotos
       }
-      return p
-    })
-    saveContent({
-      ...content,
-      photos: updatedPhotos
     })
   }
 
   const deletePhoto = (photoId) => {
-    const updatedPhotos = content.photos.filter(p => p._id !== photoId)
-    saveContent({
-      ...content,
-      photos: updatedPhotos
-    })
+    saveContent(prev => ({
+      ...prev,
+      photos: (prev.photos || []).filter(p => p._id !== photoId && p.image?.src !== photoId)
+    }))
   }
 
   // Category management
   const addCategory = (title, coverSrc, description = '') => {
     const slug = title.toLowerCase().trim().replaceAll(' ', '-').replaceAll('&', 'and')
-    if (content.categories.some(c => c.slug === slug)) {
+    let exists = false
+
+    saveContent(prev => {
+      if ((prev.categories || []).some(c => c.slug === slug)) {
+        exists = true
+        return prev
+      }
+      const newCategory = {
+        title,
+        slug,
+        src: coverSrc,
+        description,
+        coverImage: { src: coverSrc, alt: `${title} portfolio collection` }
+      }
+      return {
+        ...prev,
+        categories: [...(prev.categories || []), newCategory]
+      }
+    })
+
+    if (exists) {
       alert('A category with this name already exists.')
       return false
     }
-    const newCategory = {
-      title,
-      slug,
-      src: coverSrc,
-      description,
-      coverImage: { src: coverSrc, alt: `${title} portfolio collection` }
-    }
-    saveContent({
-      ...content,
-      categories: [...content.categories, newCategory]
-    })
     return true
   }
 
   const editCategory = (slug, updatedFields) => {
-    const updatedCategories = content.categories.map(c => {
-      if (c.slug === slug) {
-        const title = updatedFields.title || c.title
-        const newSlug = title.toLowerCase().trim().replaceAll(' ', '-').replaceAll('&', 'and')
-        const src = updatedFields.src || c.src
-        return {
-          ...c,
-          title,
-          slug: newSlug,
-          src,
-          description: updatedFields.description ?? c.description,
-          coverImage: { src, alt: `${title} portfolio collection` }
+    saveContent(prev => {
+      const updatedCategories = (prev.categories || []).map(c => {
+        if (c.slug === slug) {
+          const title = updatedFields.title || c.title
+          const newSlug = title.toLowerCase().trim().replaceAll(' ', '-').replaceAll('&', 'and')
+          const src = updatedFields.src || c.src
+          return {
+            ...c,
+            title,
+            slug: newSlug,
+            src,
+            description: updatedFields.description ?? c.description,
+            coverImage: { src, alt: `${title} portfolio collection` }
+          }
+        }
+        return c
+      })
+
+      let updatedPhotos = prev.photos || []
+      if (updatedFields.title) {
+        const newSlug = updatedFields.title.toLowerCase().trim().replaceAll(' ', '-').replaceAll('&', 'and')
+        if (newSlug !== slug) {
+          updatedPhotos = updatedPhotos.map(p => p.categorySlug === slug ? { ...p, categorySlug: newSlug } : p)
         }
       }
-      return c
-    })
 
-    // If slug changed, update photos matching old slug
-    let updatedPhotos = content.photos
-    if (updatedFields.title) {
-      const newSlug = updatedFields.title.toLowerCase().trim().replaceAll(' ', '-').replaceAll('&', 'and')
-      if (newSlug !== slug) {
-        updatedPhotos = content.photos.map(p => p.categorySlug === slug ? { ...p, categorySlug: newSlug } : p)
+      return {
+        ...prev,
+        categories: updatedCategories,
+        photos: updatedPhotos
       }
-    }
-
-    saveContent({
-      ...content,
-      categories: updatedCategories,
-      photos: updatedPhotos
     })
   }
 
   const deleteCategory = (slug) => {
     if (!confirm('Are you sure you want to delete this category? Its photographs will also be deleted.')) return
-    const updatedCategories = content.categories.filter(c => c.slug !== slug)
-    const updatedPhotos = content.photos.filter(p => p.categorySlug !== slug)
-    saveContent({
-      ...content,
-      categories: updatedCategories,
-      photos: updatedPhotos
-    })
+    saveContent(prev => ({
+      ...prev,
+      categories: (prev.categories || []).filter(c => c.slug !== slug),
+      photos: (prev.photos || []).filter(p => p.categorySlug !== slug)
+    }))
   }
 
   // Reset to original content
   const resetToDefault = () => {
     if (confirm('Are you sure you want to restore original default content? All custom edits will be cleared.')) {
       localStorage.removeItem(STORAGE_KEY)
-      setContent(defaultContent)
+      idbRemove(STORAGE_KEY)
+      setContent({
+        ...defaultContent,
+        photos: sanitizePhotos(defaultContent.photos)
+      })
       alert('Portfolio has been reset to defaults.')
+    }
+  }
+
+  // Reload default photos from code without wiping categories and settings
+  const syncLatestCodePhotos = () => {
+    if (confirm('Do you want to reload default photos from project code? Your custom categories and settings will be preserved.')) {
+      saveContent(prev => ({
+        ...prev,
+        photos: sanitizePhotos(defaultContent.photos),
+        heroSlides: defaultContent.heroSlides,
+      }))
+      alert('Photos synchronized from code successfully!')
     }
   }
 
@@ -272,7 +496,11 @@ export function PortfolioProvider({ children }) {
   const importData = (jsonString) => {
     try {
       const parsed = JSON.parse(jsonString)
-      saveContent(parsed)
+      saveContent({
+        ...defaultContent,
+        ...parsed,
+        photos: sanitizePhotos(parsed.photos || defaultContent.photos)
+      })
       alert('Content imported successfully!')
       return true
     } catch (e) {
@@ -331,9 +559,13 @@ export function PortfolioProvider({ children }) {
       editCategory,
       deleteCategory,
       resetToDefault,
+      syncLatestCodePhotos,
       exportData,
       importData,
-      saveContent
+      saveContent,
+      cloudConnected,
+      saveFirebaseConfig,
+      getStoredFirebaseConfig
     }}>
       {children}
     </PortfolioContext.Provider>

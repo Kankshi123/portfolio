@@ -6,10 +6,22 @@ export const identity = {
 
 export const imageUrl = (id, width = 1100) => {
   if (!id) return ''
-  if (id.startsWith('http://') || id.startsWith('https://') || id.startsWith('data:') || id.startsWith('blob:') || id.startsWith('/')) {
-    return id
+  const cleanId = String(id).trim()
+  if (!cleanId) return ''
+
+  // Support Unsplash photo webpage URLs (e.g. https://unsplash.com/photos/some-slug-ABC123XYZ or https://unsplash.com/photos/ABC123XYZ)
+  if (cleanId.includes('unsplash.com/photos/') && !cleanId.includes('images.unsplash.com')) {
+    const match = cleanId.match(/unsplash\.com\/photos\/(?:[\w-]*?-)?([a-zA-Z0-9_-]+)(?:\?.*)?$/)
+    if (match && match[1]) {
+      const photoId = match[1]
+      return `https://images.unsplash.com/${photoId.startsWith('photo-') ? photoId : 'photo-' + photoId}?auto=format&fit=crop&w=${width}&q=85`
+    }
   }
-  return `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${width}&q=85`
+
+  if (cleanId.startsWith('http://') || cleanId.startsWith('https://') || cleanId.startsWith('data:') || cleanId.startsWith('blob:') || cleanId.startsWith('/')) {
+    return cleanId
+  }
+  return `https://images.unsplash.com/${cleanId}?auto=format&fit=crop&w=${width}&q=85`
 }
 
 const photo = (id, alt, caption = '') => ({ image: { src: id, alt }, altText: alt, caption })
