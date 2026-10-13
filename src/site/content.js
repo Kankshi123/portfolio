@@ -113,9 +113,17 @@ export const localContent = {
     heroImage: { src: 'photo-1523438885200-e635ba2c371e', alt: 'A photography portfolio image' },
     portrait: { src: 'photo-1534528741775-53994a69daeb', alt: 'Portrait placeholder for Kashif Rashid Khan' },
   },
+  contact: {
+    heading: 'Work with Kashif',
+    subheading: 'Photography for people, places and moments',
+    heroImage: { src: 'photo-1511795409834-ef04bbd61622', alt: 'Wedding reception celebration banner' },
+  },
   publications: [],
   instagramImages: images.categories.map(([title, src]) => ({ image: { src, alt: `${title} portfolio photograph` } })),
 }
 
 export const localImage = (asset, width = 1100) => asset?.src ? imageUrl(asset.src, width) : ''
-export const localSrcSet = (asset, widths = [480, 800, 1200, 1800]) => asset?.src ? widths.map(width => `${imageUrl(asset.src, width)} ${width}w`).join(', ') : undefined
+export const localSrcSet = (asset, widths = [480, 800, 1200, 1800]) => {
+  if (!asset?.src || asset.src.startsWith('data:') || asset.src.startsWith('blob:')) return undefined
+  return widths.map(width => `${imageUrl(asset.src, width)} ${width}w`).join(', ')
+}

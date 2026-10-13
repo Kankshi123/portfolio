@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   X, Plus, Trash2, Edit3, Image as ImageIcon, Settings, User, 
-  FolderPlus, Upload, Download, RefreshCw, Key, Check, AlertCircle, Eye
+  FolderPlus, Upload, Download, RefreshCw, Key, Check, AlertCircle, Eye, Layers
 } from 'lucide-react'
 import { usePortfolio } from './usePortfolioData'
 import { imageUrl } from './content'
@@ -17,6 +17,11 @@ export function AdminModal() {
     changePin,
     updateSettings,
     updateAbout,
+    updateContact,
+    addHeroSlide,
+    editHeroSlide,
+    deleteHeroSlide,
+    setHeroSlides,
     addPhoto,
     editPhoto,
     deletePhoto,
@@ -32,7 +37,7 @@ export function AdminModal() {
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState('')
 
-  // Active Tab: 'photos' | 'categories' | 'profile' | 'settings'
+  // Active Tab: 'photos' | 'categories' | 'banners' | 'profile' | 'settings'
   const [activeTab, setActiveTab] = useState('photos')
 
   // Photo Filter & Form States
@@ -56,6 +61,21 @@ export function AdminModal() {
     description: ''
   })
 
+  // Home Background Hero Slides State
+  const [isAddingSlide, setIsAddingSlide] = useState(false)
+  const [editingSlideIndex, setEditingSlideIndex] = useState(null)
+  const [slideForm, setSlideForm] = useState({
+    src: '',
+    altText: ''
+  })
+
+  // Banner forms for About & Contact
+  const [aboutBannerSrc, setAboutBannerSrc] = useState(content.about?.heroImage?.src || 'photo-1523438885200-e635ba2c371e')
+  const [aboutBannerAlt, setAboutBannerAlt] = useState(content.about?.heroImage?.alt || 'About Kashif hero banner')
+
+  const [contactBannerSrc, setContactBannerSrc] = useState(content.contact?.heroImage?.src || 'photo-1511795409834-ef04bbd61622')
+  const [contactBannerAlt, setContactBannerAlt] = useState(content.contact?.heroImage?.alt || 'Work with Kashif hero banner')
+
   // Settings / Profile Form States
   const [settingsForm, setSettingsForm] = useState({ ...content.settings })
   const [aboutForm, setAboutForm] = useState({
@@ -70,6 +90,9 @@ export function AdminModal() {
   const [newPin, setNewPin] = useState('')
   const fileInputRef = useRef(null)
   const backupInputRef = useRef(null)
+  const slideFileRef = useRef(null)
+  const aboutBannerFileRef = useRef(null)
+  const contactBannerFileRef = useRef(null)
 
   if (!isAdminOpen) return null
 
@@ -80,7 +103,7 @@ export function AdminModal() {
       setPinError('')
       setPinInput('')
     } else {
-      setPinError('Incorrect PIN. Default is 1234.')
+      setPinError('Incorrect PIN. Please try again.')
     }
   }
 
@@ -194,6 +217,49 @@ export function AdminModal() {
     alert('About page details updated successfully!')
   }
 
+  // Save Home Slide
+  const handleSaveSlide = (e) => {
+    e.preventDefault()
+    if (!slideForm.src.trim()) {
+      alert('Please specify an image URL or upload an image file.')
+      return
+    }
+    if (editingSlideIndex !== null) {
+      editHeroSlide(editingSlideIndex, slideForm)
+      alert(`Home background slide #${editingSlideIndex + 1} updated!`)
+    } else {
+      addHeroSlide(slideForm)
+      alert('New Home background slide added!')
+    }
+    setIsAddingSlide(false)
+    setEditingSlideIndex(null)
+    setSlideForm({ src: '', altText: '' })
+  }
+
+  // Save About Banner
+  const handleSaveAboutHero = () => {
+    if (!aboutBannerSrc.trim()) {
+      alert('Please enter an image URL or upload an image.')
+      return
+    }
+    updateAbout({
+      heroImage: { src: aboutBannerSrc.trim(), alt: aboutBannerAlt.trim() || 'About hero banner' }
+    })
+    alert('About page banner image updated successfully!')
+  }
+
+  // Save Contact Banner
+  const handleSaveContactHero = () => {
+    if (!contactBannerSrc.trim()) {
+      alert('Please enter an image URL or upload an image.')
+      return
+    }
+    updateContact({
+      heroImage: { src: contactBannerSrc.trim(), alt: contactBannerAlt.trim() || 'Contact hero banner' }
+    })
+    alert('Contact page banner image updated successfully!')
+  }
+
   // Filtered photos
   const filteredPhotos = selectedCategoryFilter === 'all'
     ? content.photos
@@ -257,6 +323,12 @@ export function AdminModal() {
                 onClick={() => { setActiveTab('categories'); setIsAddingCategory(false); }}
               >
                 <FolderPlus size={18} /> Categories ({content.categories.length})
+              </button>
+              <button 
+                className={`admin-nav-item ${activeTab === 'banners' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('banners'); setIsAddingSlide(false); }}
+              >
+                <Layers size={18} /> Hero &amp; Banners
               </button>
               <button 
                 className={`admin-nav-item ${activeTab === 'profile' ? 'active' : ''}`}
@@ -604,6 +676,316 @@ export function AdminModal() {
                         </div>
                       )
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: HERO & PAGE BANNERS */}
+              {activeTab === 'banners' && (
+                <div className="admin-section">
+                  <div className="admin-section-header">
+                    <div>
+                      <h3>Hero Slides &amp; Page Banners</h3>
+                      <p>Modify, upload, edit, or delete background images for the Home screen, About banner, and Contact banner.</p>
+                    </div>
+                  </div>
+
+                  {/* Section 1: Home Screen Background Slides */}
+                  <div className="admin-card" style={{ marginBottom: '28px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                      <div>
+                        <h4 style={{ margin: 0 }}>Home Background Slides ({content.heroSlides?.length || 0})</h4>
+                        <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#666' }}>Images that cycle in the background behind "Captured in Light".</p>
+                      </div>
+                      {!isAddingSlide && (
+                        <button 
+                          type="button" 
+                          className="admin-btn admin-btn-primary admin-btn-sm"
+                          onClick={() => {
+                            setSlideForm({ src: '', altText: '' })
+                            setEditingSlideIndex(null)
+                            setIsAddingSlide(true)
+                          }}
+                        >
+                          <Plus size={15}/> Add New Slide
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Slide Add/Edit Form */}
+                    {isAddingSlide && (
+                      <form onSubmit={handleSaveSlide} style={{ background: '#fcfcfc', border: '1px solid #e5e5e5', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
+                        <h5 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600 }}>
+                          {editingSlideIndex !== null ? `Edit Slide #${editingSlideIndex + 1}` : 'Add New Home Background Slide'}
+                        </h5>
+
+                        <div className="admin-form-group">
+                          <label>Image URL or Device Upload</label>
+                          <div className="admin-input-upload">
+                            <input 
+                              type="text" 
+                              className="admin-input" 
+                              placeholder="Unsplash ID, https://..., or upload image below" 
+                              value={slideForm.src}
+                              onChange={e => setSlideForm({ ...slideForm, src: e.target.value })}
+                              required
+                            />
+                            <button 
+                              type="button" 
+                              className="admin-btn-secondary" 
+                              onClick={() => slideFileRef.current?.click()}
+                            >
+                              <Upload size={14}/> Upload
+                            </button>
+                            <input 
+                              type="file" 
+                              ref={slideFileRef} 
+                              accept="image/*" 
+                              style={{ display: 'none' }} 
+                              onChange={e => handleFileUpload(e, base64 => setSlideForm(f => ({ ...f, src: base64 })))} 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="admin-form-group">
+                          <label>Slide Label / Description (optional)</label>
+                          <input 
+                            type="text" 
+                            className="admin-input" 
+                            placeholder="e.g. Wedding golden hour moments" 
+                            value={slideForm.altText}
+                            onChange={e => setSlideForm({ ...slideForm, altText: e.target.value })}
+                          />
+                        </div>
+
+                        {slideForm.src && (
+                          <div className="admin-preview-box" style={{ maxHeight: '180px', overflow: 'hidden', borderRadius: '6px', marginBottom: '14px' }}>
+                            <img src={imageUrl(slideForm.src, 600)} alt="Preview" style={{ width: '100%', height: '180px', objectFit: 'cover' }} />
+                          </div>
+                        )}
+
+                        <div className="admin-form-actions">
+                          <button type="submit" className="admin-btn admin-btn-primary">
+                            <Check size={15}/> {editingSlideIndex !== null ? 'Update Slide' : 'Save Slide'}
+                          </button>
+                          <button 
+                            type="button" 
+                            className="admin-btn admin-btn-secondary" 
+                            onClick={() => { setIsAddingSlide(false); setEditingSlideIndex(null); }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Hero Slides List */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px' }}>
+                      {(content.heroSlides || []).map((s, idx) => (
+                        <div key={idx} style={{ border: '1px solid #ebebeb', borderRadius: '8px', overflow: 'hidden', background: '#fff' }}>
+                          <div style={{ height: '130px', position: 'relative', background: '#111' }}>
+                            <img src={imageUrl(s.src, 400)} alt={s.altText || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <span style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '10px', padding: '3px 7px', borderRadius: '4px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                              Slide {String(idx + 1).padStart(2, '0')}
+                            </span>
+                          </div>
+                          <div style={{ padding: '10px 12px' }}>
+                            <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {s.altText || 'Hero background slide'}
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button 
+                                type="button" 
+                                className="admin-action-btn edit" 
+                                style={{ flex: 1, justifyContent: 'center' }}
+                                onClick={() => {
+                                  setSlideForm({ src: s.src, altText: s.altText || '' })
+                                  setEditingSlideIndex(idx)
+                                  setIsAddingSlide(true)
+                                }}
+                              >
+                                <Edit3 size={13}/> Edit
+                              </button>
+                              <button 
+                                type="button" 
+                                className="admin-action-btn delete" 
+                                style={{ flex: 1, justifyContent: 'center' }}
+                                onClick={() => {
+                                  if (confirm(`Delete slide ${idx + 1}?`)) {
+                                    deleteHeroSlide(idx)
+                                  }
+                                }}
+                              >
+                                <Trash2 size={13}/> Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {(!content.heroSlides || content.heroSlides.length === 0) && (
+                      <div style={{ textAlign: 'center', padding: '30px', color: '#888', fontSize: '13px' }}>
+                        No custom slides. Click "+ Add New Slide" to add a background image.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section 2: About Page Hero Banner */}
+                  <div className="admin-card" style={{ marginBottom: '28px' }}>
+                    <h4>About Page Banner Image ("About Kashif")</h4>
+                    <p style={{ margin: '4px 0 16px', fontSize: '13px', color: '#666' }}>
+                      Large background photo appearing behind the "ABOUT KASHIF" heading.
+                    </p>
+
+                    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                      <div style={{ width: '220px', height: '130px', borderRadius: '8px', overflow: 'hidden', background: '#222', flexShrink: 0 }}>
+                        <img 
+                          src={imageUrl(aboutBannerSrc || content.about?.heroImage?.src, 400)} 
+                          alt="About Banner Preview" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
+                      </div>
+                      <div style={{ flex: '1 1 300px' }}>
+                        <div className="admin-form-group">
+                          <label>Image URL or Device Upload</label>
+                          <div className="admin-input-upload">
+                            <input 
+                              type="text" 
+                              className="admin-input" 
+                              placeholder="Unsplash ID, https://..., or upload image" 
+                              value={aboutBannerSrc}
+                              onChange={e => setAboutBannerSrc(e.target.value)}
+                            />
+                            <button 
+                              type="button" 
+                              className="admin-btn-secondary" 
+                              onClick={() => aboutBannerFileRef.current?.click()}
+                            >
+                              <Upload size={14}/> Upload
+                            </button>
+                            <input 
+                              type="file" 
+                              ref={aboutBannerFileRef} 
+                              accept="image/*" 
+                              style={{ display: 'none' }} 
+                              onChange={e => handleFileUpload(e, base64 => setAboutBannerSrc(base64))} 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="admin-form-group">
+                          <label>Banner Alt Text / Description</label>
+                          <input 
+                            type="text" 
+                            className="admin-input" 
+                            value={aboutBannerAlt} 
+                            onChange={e => setAboutBannerAlt(e.target.value)}
+                            placeholder="e.g. About Kashif floral canopy"
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
+                          <button 
+                            type="button" 
+                            className="admin-btn admin-btn-primary admin-btn-sm"
+                            onClick={handleSaveAboutHero}
+                          >
+                            <Check size={14}/> Save About Banner
+                          </button>
+                          <button 
+                            type="button" 
+                            className="admin-btn admin-btn-secondary admin-btn-sm"
+                            onClick={() => {
+                              if (confirm('Reset About banner to original default photo?')) {
+                                setAboutBannerSrc('photo-1523438885200-e635ba2c371e')
+                                updateAbout({ heroImage: { src: 'photo-1523438885200-e635ba2c371e', alt: 'About Kashif hero banner' } })
+                              }
+                            }}
+                          >
+                            Reset to Default
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 3: Contact Page Hero Banner */}
+                  <div className="admin-card">
+                    <h4>Contact Page Banner Image ("Work with Kashif")</h4>
+                    <p style={{ margin: '4px 0 16px', fontSize: '13px', color: '#666' }}>
+                      Large background photo appearing behind the "WORK WITH KASHIF" heading.
+                    </p>
+
+                    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                      <div style={{ width: '220px', height: '130px', borderRadius: '8px', overflow: 'hidden', background: '#222', flexShrink: 0 }}>
+                        <img 
+                          src={imageUrl(contactBannerSrc || content.contact?.heroImage?.src, 400)} 
+                          alt="Contact Banner Preview" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
+                      </div>
+                      <div style={{ flex: '1 1 300px' }}>
+                        <div className="admin-form-group">
+                          <label>Image URL or Device Upload</label>
+                          <div className="admin-input-upload">
+                            <input 
+                              type="text" 
+                              className="admin-input" 
+                              placeholder="Unsplash ID, https://..., or upload image" 
+                              value={contactBannerSrc}
+                              onChange={e => setContactBannerSrc(e.target.value)}
+                            />
+                            <button 
+                              type="button" 
+                              className="admin-btn-secondary" 
+                              onClick={() => contactBannerFileRef.current?.click()}
+                            >
+                              <Upload size={14}/> Upload
+                            </button>
+                            <input 
+                              type="file" 
+                              ref={contactBannerFileRef} 
+                              accept="image/*" 
+                              style={{ display: 'none' }} 
+                              onChange={e => handleFileUpload(e, base64 => setContactBannerSrc(base64))} 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="admin-form-group">
+                          <label>Banner Alt Text / Description</label>
+                          <input 
+                            type="text" 
+                            className="admin-input" 
+                            value={contactBannerAlt} 
+                            onChange={e => setContactBannerAlt(e.target.value)}
+                            placeholder="e.g. Wedding celebration reception table"
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
+                          <button 
+                            type="button" 
+                            className="admin-btn admin-btn-primary admin-btn-sm"
+                            onClick={handleSaveContactHero}
+                          >
+                            <Check size={14}/> Save Contact Banner
+                          </button>
+                          <button 
+                            type="button" 
+                            className="admin-btn admin-btn-secondary admin-btn-sm"
+                            onClick={() => {
+                              if (confirm('Reset Contact banner to original default photo?')) {
+                                setContactBannerSrc('photo-1511795409834-ef04bbd61622')
+                                updateContact({ heroImage: { src: 'photo-1511795409834-ef04bbd61622', alt: 'Contact hero banner' } })
+                              }
+                            }}
+                          >
+                            Reset to Default
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

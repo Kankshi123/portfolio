@@ -223,7 +223,7 @@ function Home({ intro, onOpenViewer }) {
 }
 
 function ContactPage() {
-  const { settings } = usePublicContent()
+  const { settings, contact } = usePublicContent()
   const [status, setStatus] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState('')
@@ -250,11 +250,12 @@ function ContactPage() {
     } catch { setStatus('Your enquiry could not be sent just now. Please try again in a moment.'); setTurnstileToken(''); window.turnstile?.reset() }
     finally { setSubmitting(false) }
   }
+  const contactHeroSrc = contact?.heroImage?.src || 'photo-1511795409834-ef04bbd61622'
   return <main className="contact-page">
-    <section className="contact-hero" aria-label="A wedding reception in the English countryside">
-      <img src={imageUrl('photo-1511795409834-ef04bbd61622', 2200)} alt="An intimate wedding reception set for an evening celebration" />
+    <section className="contact-hero" aria-label="Contact hero">
+      <img src={imageUrl(contactHeroSrc, 2200)} alt={contact?.heroImage?.alt || 'Work with Kashif'} />
       <div className="contact-hero-shade" />
-      <div className="contact-hero-copy"><h1>Work with {identity.firstName}</h1><p>Photography for people, places and moments</p></div>
+      <div className="contact-hero-copy"><h1>{contact?.heading || `Work with ${identity.firstName}`}</h1><p>{contact?.subheading || 'Photography for people, places and moments'}</p></div>
     </section>
     <section className="contact-form-section">
       <p className="contact-intro">For celebrations, portraits and thoughtful collaborations.<br/>I would love to hear what you are planning.</p>

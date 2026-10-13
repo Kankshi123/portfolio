@@ -18,6 +18,7 @@ export function PortfolioProvider({ children }) {
           ...parsed,
           settings: { ...defaultContent.settings, ...(parsed.settings || {}) },
           about: { ...defaultContent.about, ...(parsed.about || {}) },
+          contact: { ...defaultContent.contact, ...(parsed.contact || {}) },
           categories: parsed.categories?.length ? parsed.categories : defaultContent.categories,
           photos: parsed.photos?.length ? parsed.photos : defaultContent.photos,
           heroSlides: parsed.heroSlides?.length ? parsed.heroSlides : defaultContent.heroSlides,
@@ -78,6 +79,53 @@ export function PortfolioProvider({ children }) {
     saveContent({
       ...content,
       about: { ...content.about, ...newAbout }
+    })
+  }
+
+  const updateContact = (newContact) => {
+    saveContent({
+      ...content,
+      contact: { ...(content.contact || defaultContent.contact || {}), ...newContact }
+    })
+  }
+
+  // Hero Slides management (Home background images)
+  const addHeroSlide = (slideData) => {
+    const currentSlides = content.heroSlides || []
+    const updated = [...currentSlides, { src: slideData.src, altText: slideData.altText || 'Hero background slide' }]
+    saveContent({
+      ...content,
+      heroSlides: updated
+    })
+  }
+
+  const editHeroSlide = (index, slideData) => {
+    const currentSlides = [...(content.heroSlides || [])]
+    if (index >= 0 && index < currentSlides.length) {
+      currentSlides[index] = {
+        ...currentSlides[index],
+        src: slideData.src || currentSlides[index].src,
+        altText: slideData.altText !== undefined ? slideData.altText : currentSlides[index].altText
+      }
+      saveContent({
+        ...content,
+        heroSlides: currentSlides
+      })
+    }
+  }
+
+  const deleteHeroSlide = (index) => {
+    const currentSlides = (content.heroSlides || []).filter((_, i) => i !== index)
+    saveContent({
+      ...content,
+      heroSlides: currentSlides
+    })
+  }
+
+  const setHeroSlides = (slides) => {
+    saveContent({
+      ...content,
+      heroSlides: slides
     })
   }
 
@@ -271,6 +319,11 @@ export function PortfolioProvider({ children }) {
       changePin,
       updateSettings,
       updateAbout,
+      updateContact,
+      addHeroSlide,
+      editHeroSlide,
+      deleteHeroSlide,
+      setHeroSlides,
       addPhoto,
       editPhoto,
       deletePhoto,
