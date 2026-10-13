@@ -222,7 +222,7 @@ export function AdminModal() {
                 <Key size={32} />
               </div>
               <h3>Enter Admin PIN</h3>
-              <p>Enter your 4-digit security PIN to access portfolio management. (Default PIN: <strong>1234</strong>)</p>
+              <p>Enter your security PIN to access portfolio management.</p>
               
               <form onSubmit={handlePinSubmit}>
                 <input 
