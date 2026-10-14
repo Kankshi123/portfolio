@@ -2,6 +2,8 @@ export const identity = {
   name: 'Kashif Rashid Khan', firstName: 'Kashif', role: 'Photographer', city: 'Dehradun', year: '2027',
   position: 'Flashlite Photography', subline: 'Weddings · Fashion · Live Events · Culture', instagram: '@flashlitephotography',
   email: 'Kashifrashidkhan01@gmail.com',
+  phone: '+919876543210',
+  whatsapp: '+919876543210',
 }
 
 export const imageUrl = (id, width = 1100) => {

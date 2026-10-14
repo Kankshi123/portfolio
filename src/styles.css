@@ -771,3 +771,433 @@
 .mobile-accordion-item:hover {
   color: #1A1A1A !important;
 }
+
+/* ---------------------------------------------------- */
+/* Client Enquiries Inbox & WhatsApp Integrations       */
+/* ---------------------------------------------------- */
+
+.admin-badge-count {
+  margin-left: auto;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 12px;
+  line-height: 1.2;
+}
+
+.admin-chip-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  background: #f0eee9;
+  padding: 3px 8px;
+  border-radius: 12px;
+}
+
+.admin-inbox-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.admin-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-filter-pill {
+  border: 1px solid #e2ded8;
+  background: #ffffff;
+  color: #4a4a4a;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.admin-filter-pill:hover {
+  background: #f7f5f0;
+  color: #1a1a1a;
+  border-color: #ccc;
+}
+
+.admin-filter-pill.active {
+  background: #1a1a1a;
+  color: #ffffff;
+  border-color: #1a1a1a;
+}
+
+.admin-search-wrap {
+  min-width: 240px;
+}
+
+.admin-search-input {
+  padding: 7px 12px;
+  font-size: 12px;
+  border-radius: 20px;
+}
+
+.admin-empty-inbox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px;
+  background: #ffffff;
+  border: 1px dashed #d8d4ce;
+  border-radius: 12px;
+  color: #777;
+}
+
+.admin-empty-inbox h4 {
+  font-family: 'Bodoni Moda', serif;
+  font-size: 18px;
+  color: #222;
+  margin: 14px 0 6px;
+}
+
+.admin-empty-inbox p {
+  font-size: 13px;
+  max-width: 420px;
+  margin: 0;
+  color: #888;
+  line-height: 1.5;
+}
+
+.admin-enquiries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.admin-enquiry-card {
+  background: #ffffff;
+  border: 1px solid #eaeaea;
+  border-radius: 10px;
+  padding: 20px 22px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.admin-enquiry-card:hover {
+  border-color: #d4cfc7;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+}
+
+.admin-enquiry-card.status-new {
+  border-left: 4px solid #10b981;
+}
+
+.admin-enquiry-card.status-contacted {
+  border-left: 4px solid #3b82f6;
+}
+
+.admin-enquiry-card.status-booked {
+  border-left: 4px solid #8b5cf6;
+}
+
+.admin-enquiry-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-enquiry-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-enquiry-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #1a1a1a;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Bodoni Moda', serif;
+  font-size: 17px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.admin-enquiry-person h4 {
+  margin: 0 0 3px;
+  font-family: 'Bodoni Moda', serif;
+  font-size: 17px;
+  color: #1a1a1a;
+  letter-spacing: 0.02em;
+}
+
+.admin-enquiry-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #888;
+}
+
+.admin-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.admin-status-badge.status-new {
+  background: #ecfdf5;
+  color: #059669;
+}
+.admin-status-badge.status-new .status-dot {
+  background: #10b981;
+}
+
+.admin-status-badge.status-contacted {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.admin-status-badge.status-contacted .status-dot {
+  background: #3b82f6;
+}
+
+.admin-status-badge.status-booked {
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+.admin-status-badge.status-booked .status-dot {
+  background: #8b5cf6;
+}
+
+.admin-enquiry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  background: #faf8f5;
+  padding: 14px 16px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.enquiry-grid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.grid-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #888;
+  font-weight: 600;
+}
+
+.grid-value {
+  font-size: 13px;
+  color: #222;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.grid-value.highlight {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.admin-enquiry-note {
+  background: #fff;
+  border: 1px solid #f0ede8;
+  border-left: 3px solid #8c7355;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.note-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #8c7355;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.admin-enquiry-note p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #333;
+  font-style: italic;
+}
+
+.admin-enquiry-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f2f0eb;
+}
+
+.enquiry-contact-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-btn-wa {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #25D366;
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.admin-btn-wa:hover {
+  background: #1eb956;
+}
+
+.enquiry-status-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-status-select {
+  padding: 5px 10px;
+  border: 1px solid #d4cfc7;
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+}
+
+.admin-btn-icon-danger {
+  background: transparent;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.admin-btn-icon-danger:hover {
+  background: #fee2e2;
+  border-color: #dc2626;
+}
+
+/* Contact Page Quick WhatsApp Banner */
+.contact-quick-whatsapp {
+  max-width: 730px;
+  margin: 0 auto 24px;
+  background: #ffffff;
+  border: 1px solid #e8e5df;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.contact-quick-whatsapp span {
+  font: 400 13px 'Cormorant Garamond', serif;
+  color: #555;
+  letter-spacing: 0.05em;
+  font-size: 15px;
+}
+
+.contact-wa-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #1a1a1a;
+  text-decoration: none;
+  font: 500 10px 'Jost', sans-serif;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1a1a1a;
+  padding-bottom: 2px;
+  transition: opacity 0.2s;
+}
+
+.contact-wa-link:hover {
+  opacity: 0.7;
+}
+
+.form-status-wrap {
+  margin-top: 18px;
+  padding: 14px 18px;
+  border-radius: 4px;
+}
+
+.form-status-wrap.success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.form-status-wrap.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.wa-open-btn {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #25D366 !important;
+  color: #ffffff !important;
+  border-color: #25D366 !important;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.wa-open-btn:hover {
+  background: #1eb956 !important;
+  border-color: #1eb956 !important;
+}

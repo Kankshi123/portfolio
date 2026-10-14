@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app'
-import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore'
+import { getFirestore, doc, setDoc, onSnapshot, getDoc, collection, getDocs, deleteDoc, updateDoc } from 'firebase/firestore'
 
 const FIREBASE_CONFIG_KEY = 'portfolio_firebase_config_v1'
 const COLLECTION_NAME = 'portfolio_cms'
@@ -232,5 +232,127 @@ export function subscribeToCloudContent(onUpdate) {
   } catch (e) {
     console.warn('Failed to subscribe to cloud content:', e)
     return () => {}
+  }
+}
+
+// ----------------------------------------------------
+// Real-time Client Inquiries / Booking Messages (Firestore)
+// ----------------------------------------------------
+const ENQUIRIES_COLLECTION = 'portfolio_enquiries'
+const ENQUIRIES_CACHE_KEY = 'portfolio_enquiries_cache_v1'
+
+export function getLocalEnquiries() {
+  try {
+    const raw = localStorage.getItem(ENQUIRIES_CACHE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+export function saveLocalEnquiries(list) {
+  try {
+    localStorage.setItem(ENQUIRIES_CACHE_KEY, JSON.stringify(list))
+  } catch {}
+}
+
+export async function saveEnquiryToCloud(enquiryData) {
+  const enquiryId = 'enquiry_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)
+  const fullEnquiry = {
+    id: enquiryId,
+    ...enquiryData,
+    status: enquiryData.status || 'new',
+    createdAt: Date.now()
+  }
+
+  // 1. Instantly save to local cache
+  const existing = getLocalEnquiries()
+  const updated = [fullEnquiry, ...existing.filter(e => e.id !== enquiryId)]
+  saveLocalEnquiries(updated)
+
+  // 2. Persist to Firestore
+  const db = getDb()
+  if (db) {
+    try {
+      await withTimeout(setDoc(doc(db, ENQUIRIES_COLLECTION, enquiryId), fullEnquiry), 12000)
+    } catch (err) {
+      console.warn('Firestore enquiry push error (kept safe locally):', err?.message || err)
+    }
+  }
+
+  return fullEnquiry
+}
+
+export async function fetchEnquiriesFromCloud() {
+  const local = getLocalEnquiries()
+  const db = getDb()
+  if (!db) return local
+
+  try {
+    const snap = await withTimeout(getDocs(collection(db, ENQUIRIES_COLLECTION)), 12000)
+    const remoteList = []
+    snap.forEach(docSnap => {
+      remoteList.push(docSnap.data())
+    })
+    const map = new Map()
+    local.forEach(e => map.set(e.id, e))
+    remoteList.forEach(e => map.set(e.id, e))
+    const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    saveLocalEnquiries(merged)
+    return merged
+  } catch (err) {
+    console.warn('Error fetching cloud enquiries:', err?.message || err)
+    return local
+  }
+}
+
+export function subscribeToCloudEnquiries(onUpdate) {
+  const db = getDb()
+  if (!db) return () => {}
+
+  try {
+    const unsubscribe = onSnapshot(collection(db, ENQUIRIES_COLLECTION), (snapshot) => {
+      const list = []
+      snapshot.forEach(docSnap => {
+        list.push(docSnap.data())
+      })
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      saveLocalEnquiries(list)
+      onUpdate(list)
+    }, (err) => {
+      console.warn('Firestore enquiries subscription notice:', err?.message || err)
+    })
+    return unsubscribe
+  } catch (err) {
+    console.warn('Failed to subscribe to cloud enquiries:', err)
+    return () => {}
+  }
+}
+
+export async function deleteEnquiryFromCloud(enquiryId) {
+  const local = getLocalEnquiries().filter(e => e.id !== enquiryId)
+  saveLocalEnquiries(local)
+
+  const db = getDb()
+  if (db) {
+    try {
+      await deleteDoc(doc(db, ENQUIRIES_COLLECTION, enquiryId))
+    } catch (err) {
+      console.warn('Failed to delete enquiry from Firestore:', err)
+    }
+  }
+}
+
+export async function updateEnquiryStatusInCloud(enquiryId, status) {
+  const local = getLocalEnquiries().map(e => e.id === enquiryId ? { ...e, status } : e)
+  saveLocalEnquiries(local)
+
+  const db = getDb()
+  if (db) {
+    try {
+      await updateDoc(doc(db, ENQUIRIES_COLLECTION, enquiryId), { status })
+    } catch (err) {
+      console.warn('Failed to update enquiry status in Firestore:', err)
+    }
   }
 }

@@ -6,7 +6,13 @@ import {
   getStoredFirebaseConfig, 
   reinitFirebase,
   getDb,
-  fetchContentFromCloud 
+  fetchContentFromCloud,
+  saveEnquiryToCloud,
+  fetchEnquiriesFromCloud,
+  subscribeToCloudEnquiries,
+  deleteEnquiryFromCloud,
+  updateEnquiryStatusInCloud,
+  getLocalEnquiries
 } from './firebase'
 
 const STORAGE_KEY = 'portfolio_cms_content_v1'
@@ -228,6 +234,45 @@ export function PortfolioProvider({ children }) {
       }
     }).catch(() => {})
   }, [])
+
+  // -----------------------------------------------------------------
+  // Client Inquiries (Real-time Cloud Sync + Local Offline Resilience)
+  // -----------------------------------------------------------------
+  const [enquiries, setEnquiries] = useState(() => getLocalEnquiries())
+
+  useEffect(() => {
+    fetchEnquiriesFromCloud().then((cloudEnquiries) => {
+      if (cloudEnquiries && Array.isArray(cloudEnquiries)) {
+        setEnquiries(cloudEnquiries)
+      }
+    }).catch(() => {})
+
+    const unsubEnquiries = subscribeToCloudEnquiries((list) => {
+      if (list && Array.isArray(list)) {
+        setEnquiries(list)
+      }
+    })
+
+    return () => {
+      if (typeof unsubEnquiries === 'function') unsubEnquiries()
+    }
+  }, [cloudConnected])
+
+  const submitEnquiry = async (enquiryData) => {
+    const saved = await saveEnquiryToCloud(enquiryData)
+    setEnquiries(prev => [saved, ...prev.filter(e => e.id !== saved.id)])
+    return saved
+  }
+
+  const deleteEnquiry = async (id) => {
+    await deleteEnquiryFromCloud(id)
+    setEnquiries(prev => prev.filter(e => e.id !== id))
+  }
+
+  const updateEnquiryStatus = async (id, status) => {
+    await updateEnquiryStatusInCloud(id, status)
+    setEnquiries(prev => prev.map(e => e.id === id ? { ...e, status } : e))
+  }
 
   const syncCurrentContentToCloud = async () => {
     try {
@@ -599,7 +644,11 @@ export function PortfolioProvider({ children }) {
       cloudConnected,
       saveFirebaseConfig,
       getStoredFirebaseConfig,
-      syncCurrentContentToCloud
+      syncCurrentContentToCloud,
+      enquiries,
+      submitEnquiry,
+      deleteEnquiry,
+      updateEnquiryStatus
     }}>
       {children}
     </PortfolioContext.Provider>

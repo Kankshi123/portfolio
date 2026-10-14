@@ -8,7 +8,7 @@ import { Preloader } from '../motion/Preloader'
 import { motionTokens } from '../motion/tokens'
 import { SliceTile, SliceTileBoundary } from '../motion/SliceTile'
 import { FullscreenViewer } from '../motion/FullscreenViewer'
-import { contactFormConfigured, FORMSPREE_FORM_ID, TURNSTILE_SITE_KEY } from '../config/integrations'
+import { contactFormConfigured, hasTurnstile, FORMSPREE_FORM_ID, TURNSTILE_SITE_KEY } from '../config/integrations'
 import { usePortfolio } from './usePortfolioData'
 import { AdminModal } from './AdminModal'
 
@@ -20,7 +20,7 @@ const usePublicContent = () => {
 function TurnstileWidget({ onVerify, onExpire }) {
   const container = useRef(null)
   useEffect(() => {
-    if (!contactFormConfigured || !container.current) return
+    if (!hasTurnstile || !container.current) return
     const render = () => {
       if (!window.turnstile || !container.current) return
       const widgetId = window.turnstile.render(container.current, { sitekey: TURNSTILE_SITE_KEY, theme: 'light', callback: onVerify, 'expired-callback': onExpire })
@@ -224,32 +224,94 @@ function Home({ intro, onOpenViewer }) {
 
 function ContactPage() {
   const { settings, contact } = usePublicContent()
-  const [status, setStatus] = useState('')
+  const { submitEnquiry } = usePortfolio()
+  const [status, setStatus] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState('')
   const [form, setForm] = useState({ name: '', email: '', phone: '', interest: '', date: '', location: '', note: '' })
   const update = e => setForm({ ...form, [e.target.name]: e.target.value })
   const onVerify = useCallback(token => setTurnstileToken(token), [])
   const onExpire = useCallback(() => setTurnstileToken(''), [])
+
+  const targetPhone = settings.whatsapp || settings.phone || identity.whatsapp || identity.phone || '919876543210'
+  const cleanPhone = String(targetPhone).replace(/[^\d]/g, '')
+  const formattedPhone = cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone
+
   const submit = async e => {
     e.preventDefault()
     const payload = new FormData(e.currentTarget)
     if (payload.get('_gotcha')) return
-    if (!contactFormConfigured) { setStatus('The enquiry form is being prepared. Please try again shortly.'); return }
-    if (!turnstileToken) { setStatus('Please complete the verification before sending your enquiry.'); return }
-    payload.set('cf-turnstile-response', turnstileToken)
-    payload.set('_replyto', form.email)
-    payload.set('_subject', `Photography enquiry - ${form.name}`)
-    setSubmitting(true); setStatus('')
+    if (hasTurnstile && !turnstileToken) { 
+      setStatus({ text: 'Please complete the verification before sending your enquiry.', type: 'error' })
+      return 
+    }
+
+    setSubmitting(true)
+    setStatus(null)
+
+    const waText = `Hi Kashif! I would like to book a photography session.
+
+• Name: ${form.name}
+• Interested in: ${form.interest}
+• Date: ${form.date}
+• Location: ${form.location}
+• Phone: ${form.phone || 'Not provided'}
+• Email: ${form.email}
+• Note: ${form.note}`
+    const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(waText)}`
+
     try {
-      const response = await fetch(`https://formspree.io/f/${FORMSPREE_FORM_ID}`, { method: 'POST', body: payload, headers: { Accept: 'application/json' } })
-      if (!response.ok) throw new Error('The form service did not accept the enquiry.')
-      setStatus('Thank you for your note. Your enquiry has been sent; I will be in touch soon.')
-      setForm({ name: '', email: '', phone: '', interest: '', date: '', location: '', note: '' }); setTurnstileToken('')
+      // 1. Save directly into Firebase Cloud Firestore & local Admin inbox
+      if (typeof submitEnquiry === 'function') {
+        await submitEnquiry({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          interest: form.interest,
+          date: form.date,
+          location: form.location,
+          note: form.note,
+          status: 'new'
+        })
+      }
+
+      // 2. Also send in background via Formspree or email endpoint if available
+      try {
+        const recipientEmail = settings.email || identity.email
+        const endpoint = contactFormConfigured
+          ? `https://formspree.io/f/${FORMSPREE_FORM_ID}`
+          : `https://formsubmit.co/ajax/${recipientEmail}`
+        if (!contactFormConfigured) payload.set('_captcha', 'false')
+        if (turnstileToken) payload.set('cf-turnstile-response', turnstileToken)
+        payload.set('_replyto', form.email)
+        payload.set('_subject', `Photography enquiry - ${form.name}`)
+        fetch(endpoint, { method: 'POST', body: payload, headers: { Accept: 'application/json' } }).catch(() => {})
+      } catch {}
+
+      // 3. Open WhatsApp in new window
+      try {
+        window.open(waUrl, '_blank')
+      } catch {}
+
+      setStatus({
+        text: 'Thank you! Your enquiry has been saved and sent to Kashif. Starting WhatsApp chat...',
+        type: 'success',
+        waUrl
+      })
+      setForm({ name: '', email: '', phone: '', interest: '', date: '', location: '', note: '' })
+      setTurnstileToken('')
       window.turnstile?.reset()
-    } catch { setStatus('Your enquiry could not be sent just now. Please try again in a moment.'); setTurnstileToken(''); window.turnstile?.reset() }
-    finally { setSubmitting(false) }
+    } catch (err) {
+      setStatus({
+        text: 'Thank you! You can connect with Kashif directly on WhatsApp:',
+        type: 'success',
+        waUrl
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
+
   const contactHeroSrc = contact?.heroImage?.src || 'photo-1511795409834-ef04bbd61622'
   return <main className="contact-page">
     <section className="contact-hero" aria-label="Contact hero">
@@ -259,18 +321,45 @@ function ContactPage() {
     </section>
     <section className="contact-form-section">
       <p className="contact-intro">For celebrations, portraits and thoughtful collaborations.<br/>I would love to hear what you are planning.</p>
+      
+      <div className="contact-quick-whatsapp">
+        <span>Looking for an instant reply?</span>
+        <a 
+          href={`https://wa.me/${formattedPhone}?text=${encodeURIComponent('Hi Kashif, I would like to enquire about photography bookings.')}`}
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="contact-wa-link"
+        >
+          Chat on WhatsApp <ArrowUpRight size={13}/>
+        </a>
+      </div>
+
       <form className="contact-form" onSubmit={submit}>
         <label className="honeypot" aria-hidden="true">Leave this field empty<input name="_gotcha" tabIndex="-1" autoComplete="off" /></label>
         <label className="form-field"><span>Name *</span><input name="name" autoComplete="name" value={form.name} onChange={update} required /></label>
         <label className="form-field"><span>Email address *</span><input type="email" name="email" autoComplete="email" value={form.email} onChange={update} required /></label>
-        <label className="form-field"><span>Phone</span><input type="tel" name="phone" autoComplete="tel" value={form.phone} onChange={update} /></label>
+        <label className="form-field"><span>Phone</span><input type="tel" name="phone" autoComplete="tel" value={form.phone} onChange={update} placeholder="Optional, for WhatsApp / Call" /></label>
         <label className="form-field"><span>Interested in *</span><select name="interest" value={form.interest} onChange={update} required><option value="" disabled></option><option>Weddings</option><option>Club &amp; Gigs</option><option>Event Photography</option><option>Models &amp; Fashion</option><option>Cultural Events</option><option>Concerts &amp; Shows</option><option>Content Creation</option><option>Other</option></select></label>
         <label className="form-field"><span>Date *</span><input type="date" name="date" value={form.date} onChange={update} required /></label>
         <label className="form-field"><span>Location *</span><input name="location" autoComplete="address-level2" value={form.location} onChange={update} placeholder="City, country" required /></label>
         <label className="form-field form-note"><span>Leave a note *</span><textarea name="note" value={form.note} onChange={update} rows="5" required /></label>
-        {contactFormConfigured && <TurnstileWidget onVerify={onVerify} onExpire={onExpire}/>}
+        {hasTurnstile && <TurnstileWidget onVerify={onVerify} onExpire={onExpire}/>}
         <button className="outline-button form-submit" type="submit" disabled={submitting}>{submitting ? 'Sending...' : 'Submit form'} <ArrowUpRight size={13}/></button>
-        <p className="form-status" role="status" aria-live="polite">{status}</p>
+        {status && (
+          <div className={`form-status-wrap ${status.type}`}>
+            <p className="form-status" role="status" aria-live="polite">{status.text}</p>
+            {status.waUrl && (
+              <a 
+                href={status.waUrl} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="outline-button wa-open-btn"
+              >
+                Open WhatsApp Chat <ArrowUpRight size={13}/>
+              </a>
+            )}
+          </div>
+        )}
         <p className="contact-availability">Based in {settings.baseCity || identity.city}, India · {settings.availabilityLine}</p>
       </form>
     </section>

@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   X, Plus, Trash2, Edit3, Image as ImageIcon, Settings, User, 
-  FolderPlus, Upload, Download, RefreshCw, Key, Check, AlertCircle, Eye, Layers, Loader2, Cloud, Globe
+  FolderPlus, Upload, Download, RefreshCw, Key, Check, AlertCircle, Eye, Layers, Loader2, Cloud, Globe,
+  MessageSquare, Phone, Mail, Calendar, MapPin, Clock, MessageCircle, ExternalLink, CheckCircle
 } from 'lucide-react'
 import { usePortfolio } from './usePortfolioData'
 import { imageUrl } from './content'
@@ -115,7 +116,10 @@ export function AdminModal() {
     cloudConnected,
     saveFirebaseConfig,
     getStoredFirebaseConfig,
-    syncCurrentContentToCloud
+    syncCurrentContentToCloud,
+    enquiries = [],
+    deleteEnquiry,
+    updateEnquiryStatus
   } = usePortfolio()
 
   // Cloud Config state
@@ -159,8 +163,10 @@ export function AdminModal() {
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState('')
 
-  // Active Tab: 'photos' | 'categories' | 'banners' | 'profile' | 'settings'
+  // Active Tab: 'photos' | 'categories' | 'banners' | 'profile' | 'settings' | 'enquiries'
   const [activeTab, setActiveTab] = useState('photos')
+  const [enquiryFilter, setEnquiryFilter] = useState('all')
+  const [enquirySearch, setEnquirySearch] = useState('')
 
   // Photo Filter & Form States
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all')
@@ -239,6 +245,21 @@ export function AdminModal() {
   const contactBannerFileRef = useRef(null)
   const portraitFileRef = useRef(null)
   const photoFormRef = useRef(null)
+
+  const filteredEnquiries = (enquiries || []).filter(item => {
+    const matchesFilter = enquiryFilter === 'all' || (item.status || 'new') === enquiryFilter
+    if (!matchesFilter) return false
+    if (!enquirySearch.trim()) return true
+    const q = enquirySearch.toLowerCase()
+    return (
+      (item.name || '').toLowerCase().includes(q) ||
+      (item.email || '').toLowerCase().includes(q) ||
+      (item.phone || '').toLowerCase().includes(q) ||
+      (item.location || '').toLowerCase().includes(q) ||
+      (item.interest || '').toLowerCase().includes(q) ||
+      (item.note || '').toLowerCase().includes(q)
+    )
+  })
 
   if (!isAdminOpen) return null
 
@@ -481,6 +502,17 @@ export function AdminModal() {
           <div className="admin-body">
             {/* Sidebar Navigation */}
             <aside className="admin-sidebar">
+              <button 
+                className={`admin-nav-item ${activeTab === 'enquiries' ? 'active' : ''}`}
+                onClick={() => setActiveTab('enquiries')}
+              >
+                <MessageSquare size={18} /> Client Inquiries ({enquiries.length})
+                {enquiries.filter(e => (e.status || 'new') === 'new').length > 0 && (
+                  <span className="admin-badge-count">
+                    {enquiries.filter(e => (e.status || 'new') === 'new').length} new
+                  </span>
+                )}
+              </button>
               <button 
                 className={`admin-nav-item ${activeTab === 'photos' ? 'active' : ''}`}
                 onClick={() => { setActiveTab('photos'); setIsAddingPhoto(false); }}
@@ -1227,6 +1259,19 @@ export function AdminModal() {
                           />
                         </div>
                         <div className="admin-form-group">
+                          <label>WhatsApp Phone Number</label>
+                          <input 
+                            type="tel" 
+                            className="admin-input"
+                            placeholder="+91 98765 43210"
+                            value={settingsForm.whatsapp || settingsForm.phone || ''} 
+                            onChange={e => setSettingsForm({ ...settingsForm, whatsapp: e.target.value, phone: e.target.value })} 
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-form-row">
+                        <div className="admin-form-group">
                           <label>Instagram Handle</label>
                           <input 
                             type="text" 
@@ -1235,16 +1280,15 @@ export function AdminModal() {
                             onChange={e => setSettingsForm({ ...settingsForm, instagram: e.target.value, instagramHandle: e.target.value })} 
                           />
                         </div>
-                      </div>
-
-                      <div className="admin-form-group">
-                        <label>Availability Line</label>
-                        <input 
-                          type="text" 
-                          className="admin-input"
-                          value={settingsForm.availabilityLine || ''} 
-                          onChange={e => setSettingsForm({ ...settingsForm, availabilityLine: e.target.value })} 
-                        />
+                        <div className="admin-form-group">
+                          <label>Availability Line</label>
+                          <input 
+                            type="text" 
+                            className="admin-input"
+                            value={settingsForm.availabilityLine || ''} 
+                            onChange={e => setSettingsForm({ ...settingsForm, availabilityLine: e.target.value })} 
+                          />
+                        </div>
                       </div>
 
                       <div className="admin-form-actions">
@@ -1508,6 +1552,211 @@ export function AdminModal() {
                       <RefreshCw size={15}/> Reset Everything to Defaults
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* TAB: CLIENT INQUIRIES & BOOKING MESSAGES */}
+              {activeTab === 'enquiries' && (
+                <div className="admin-section">
+                  <div className="admin-section-header">
+                    <div>
+                      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        Client Inquiries &amp; Booking Requests
+                        {enquiries.length > 0 && (
+                          <span className="admin-chip-badge">{enquiries.length} total</span>
+                        )}
+                      </h3>
+                      <p>All contact submissions are automatically saved to your cloud database in real time.</p>
+                    </div>
+                  </div>
+
+                  {/* Filter & Search Bar */}
+                  <div className="admin-inbox-toolbar">
+                    <div className="admin-filter-pills">
+                      <button 
+                        className={`admin-filter-pill ${enquiryFilter === 'all' ? 'active' : ''}`}
+                        onClick={() => setEnquiryFilter('all')}
+                      >
+                        All ({enquiries.length})
+                      </button>
+                      <button 
+                        className={`admin-filter-pill ${enquiryFilter === 'new' ? 'active' : ''}`}
+                        onClick={() => setEnquiryFilter('new')}
+                      >
+                        New ({(enquiries || []).filter(e => (e.status || 'new') === 'new').length})
+                      </button>
+                      <button 
+                        className={`admin-filter-pill ${enquiryFilter === 'contacted' ? 'active' : ''}`}
+                        onClick={() => setEnquiryFilter('contacted')}
+                      >
+                        Contacted ({(enquiries || []).filter(e => e.status === 'contacted').length})
+                      </button>
+                      <button 
+                        className={`admin-filter-pill ${enquiryFilter === 'booked' ? 'active' : ''}`}
+                        onClick={() => setEnquiryFilter('booked')}
+                      >
+                        Booked ({(enquiries || []).filter(e => e.status === 'booked').length})
+                      </button>
+                    </div>
+
+                    <div className="admin-search-wrap">
+                      <input 
+                        type="text" 
+                        className="admin-input admin-search-input"
+                        placeholder="Search by name, event, city..."
+                        value={enquirySearch}
+                        onChange={e => setEnquirySearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Enquiries List */}
+                  {filteredEnquiries.length === 0 ? (
+                    <div className="admin-empty-inbox">
+                      <MessageSquare size={44} strokeWidth={1.2} color="#aaa" />
+                      <h4>No inquiries found</h4>
+                      <p>
+                        {enquiries.length === 0 
+                          ? "When visitors submit your website's contact form, their requests will appear here instantly." 
+                          : "No inquiries match your current filter or search criteria."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="admin-enquiries-list">
+                      {filteredEnquiries.map((item) => {
+                        const cleanPhone = (item.phone || '').replace(/[^\d]/g, '')
+                        const formattedPhone = cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone
+                        const waReplyText = `Hi ${item.name}! Thank you for getting in touch through Flashlite Photography regarding your ${item.interest || 'booking'} on ${item.date || 'your upcoming date'}.`
+                        const waLink = cleanPhone ? `https://wa.me/${formattedPhone}?text=${encodeURIComponent(waReplyText)}` : null
+
+                        return (
+                          <div key={item.id} className={`admin-enquiry-card status-${item.status || 'new'}`}>
+                            <div className="admin-enquiry-top">
+                              <div className="admin-enquiry-person">
+                                <div className="admin-enquiry-avatar">
+                                  {item.name ? item.name.charAt(0).toUpperCase() : 'C'}
+                                </div>
+                                <div>
+                                  <h4>{item.name || 'Anonymous Client'}</h4>
+                                  <div className="admin-enquiry-meta">
+                                    <Clock size={12} /> 
+                                    <span>{item.createdAt ? new Date(item.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Recently'}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="admin-enquiry-top-right">
+                                <span className={`admin-status-badge status-${item.status || 'new'}`}>
+                                  <span className="status-dot"></span>
+                                  {item.status === 'booked' ? 'Booked' : item.status === 'contacted' ? 'Contacted' : 'New Lead'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Details Grid */}
+                            <div className="admin-enquiry-grid">
+                              <div className="enquiry-grid-col">
+                                <span className="grid-label">Requested Genre</span>
+                                <span className="grid-value highlight">{item.interest || 'General'}</span>
+                              </div>
+                              <div className="enquiry-grid-col">
+                                <span className="grid-label">Event Date</span>
+                                <span className="grid-value">
+                                  <Calendar size={13} style={{ display: 'inline', marginRight: '4px' }} />
+                                  {item.date || 'Flexible'}
+                                </span>
+                              </div>
+                              <div className="enquiry-grid-col">
+                                <span className="grid-label">Location</span>
+                                <span className="grid-value">
+                                  <MapPin size={13} style={{ display: 'inline', marginRight: '4px' }} />
+                                  {item.location || 'Not specified'}
+                                </span>
+                              </div>
+                              <div className="enquiry-grid-col">
+                                <span className="grid-label">Phone</span>
+                                <span className="grid-value">
+                                  {item.phone ? (
+                                    <a href={`tel:${item.phone}`} style={{ color: '#0066cc', textDecoration: 'none' }}>
+                                      {item.phone}
+                                    </a>
+                                  ) : '—'}
+                                </span>
+                              </div>
+                              <div className="enquiry-grid-col">
+                                <span className="grid-label">Email</span>
+                                <span className="grid-value">
+                                  {item.email ? (
+                                    <a href={`mailto:${item.email}`} style={{ color: '#0066cc', textDecoration: 'none' }}>
+                                      {item.email}
+                                    </a>
+                                  ) : '—'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Note / Message */}
+                            {item.note && (
+                              <div className="admin-enquiry-note">
+                                <span className="note-label">Client's Note:</span>
+                                <p>"{item.note}"</p>
+                              </div>
+                            )}
+
+                            {/* Actions Bar */}
+                            <div className="admin-enquiry-actions">
+                              <div className="enquiry-contact-btns">
+                                {waLink && (
+                                  <a 
+                                    href={waLink} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="admin-btn-wa"
+                                    title="Open WhatsApp chat with client"
+                                  >
+                                    <MessageCircle size={15} /> Chat on WhatsApp
+                                  </a>
+                                )}
+                                {item.phone && (
+                                  <a href={`tel:${item.phone}`} className="admin-btn admin-btn-secondary admin-btn-sm">
+                                    <Phone size={13} /> Call
+                                  </a>
+                                )}
+                                {item.email && (
+                                  <a href={`mailto:${item.email}`} className="admin-btn admin-btn-secondary admin-btn-sm">
+                                    <Mail size={13} /> Email
+                                  </a>
+                                )}
+                              </div>
+
+                              <div className="enquiry-status-btns">
+                                <select 
+                                  className="admin-status-select"
+                                  value={item.status || 'new'}
+                                  onChange={e => updateEnquiryStatus(item.id, e.target.value)}
+                                >
+                                  <option value="new">Mark: New</option>
+                                  <option value="contacted">Mark: Contacted</option>
+                                  <option value="booked">Mark: Booked</option>
+                                </select>
+                                <button 
+                                  className="admin-btn-icon-danger"
+                                  title="Delete inquiry"
+                                  onClick={() => {
+                                    if (confirm(`Delete inquiry from ${item.name || 'this client'}?`)) {
+                                      deleteEnquiry(item.id)
+                                    }
+                                  }}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
